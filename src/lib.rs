@@ -1,73 +1,141 @@
-use gc_arena::{
-    make_arena, unsafe_empty_collect, ArenaParameters, Collect, Gc, GcCell, MutationContext,
-};
+use gc_arena::{make_arena, ArenaParameters, Collect, Gc, GcCell, MutationContext};
+use std::collections::HashMap;
 
-type Environment<'a> = std::collections::HashMap<String, &'a Expr<'a>>;
-
-#[derive(Debug, Copy, Clone, Collect)]
+#[derive(Debug, Clone, Collect)]
 #[collect(no_drop)]
 ///
 pub enum Expr<'gc> {
+    Null(),
     Int(i64),
+    Float(f64),
     Bool(bool),
     String(&'gc str),
     Path(&'gc str),
-    Null {},
-    List {},
-    Float {},
-    Lambda {
-        e: Gc<'gc, Expr<'gc>>,
-        arg: Gc<'gc, Expr<'gc>>,
-    },
+    List(Vec<GcExpr<'gc>>),
     Attrs {},
-
+    Lambda {
+        e: GcExpr<'gc>,
+    },
     App {
-        f: Gc<'gc, Expr<'gc>>,
-        body: Gc<'gc, Expr<'gc>>,
+        f: GcExpr<'gc>,
+        args: Vec<GcExpr<'gc>>,
+        arity: usize,
+    },
+    Thunk {
+        t: GcExpr<'gc>,
     },
     PrimOp {
         name: &'gc str,
         arity: usize,
     },
+}
 
-    // partially applied primop
-    PrimOpApp {
-        chain: Gc<'gc, Expr<'gc>>,
+#[derive(Debug, Clone, Collect)]
+#[collect(no_drop)]
+pub struct Env<'gc> {
+    up: Option<Gc<'gc, Env<'gc>>>,
+    values: HashMap<String, GcExpr<'gc>>,
+}
+
+#[derive(Debug, Clone, Collect)]
+#[collect(no_drop)]
+pub enum Cont<'gc> {
+    ApplyCont {
+        args: Vec<GcExpr<'gc>>,
+        env: GcEnv<'gc>,
         arity: usize,
     },
 }
 
+impl<'gc> Env<'gc> {
+    fn new_root() -> Env<'gc> {
+        Env {
+            up: None,
+            values: HashMap::new(),
+        }
+    }
+}
+
+type GcExpr<'gc> = Gc<'gc, Expr<'gc>>;
+type GcEnv<'gc> = Gc<'gc, Env<'gc>>;
+type GcStack<'gc> = GcCell<'gc, Vec<Cont<'gc>>>;
+
 #[derive(Debug, Copy, Clone, Collect)]
 #[collect(no_drop)]
 struct ExprRoot<'gc> {
-    root: Gc<'gc, Expr<'gc>>,
+    root: GcExpr<'gc>,
+    env: GcEnv<'gc>,
+    stack: GcStack<'gc>,
 }
 
 make_arena!(ExprArena, ExprRoot);
 
-fn eval<'gc, 'context>(
-    mc: MutationContext<'gc, 'context>,
-    expr: Gc<'gc, Expr<'gc>>,
-) -> Gc<'gc, Expr<'gc>> {
-    match *expr {
-        // Expr::Int(_) => *self,
-        Expr::App { f, body } => {
-            let ef = eval(mc, f);
-            match *ef {
-                Expr::PrimOp { name, arity, .. } => Gc::allocate(mc, Expr::PrimOpApp {
-                    arity: arity - 1,
-                    chain: ef,
-                }), // OK
-                default => {
-                    panic!("expected callable, got {:?}", ef);
+fn step<'gc>(
+    mc: MutationContext<'gc, '_>,
+    expr: GcExpr<'gc>,
+    env: GcEnv<'gc>,
+    black_hole: GcExpr<'gc>,
+    stack: GcStack<'gc>,
+) -> (GcExpr<'gc>, GcEnv<'gc>) {
+    println!("step {:?}", *expr);
+
+    if Gc::ptr_eq(expr, black_hole) {
+        panic!("found black_hole, probably infinite recursion");
+    }
+
+    let xx = {
+        let s = stack.read();
+        s.last().cloned()
+    };
+    match (&*expr, &xx) {
+        // (Expr::Let { bindings, in_ }, _) => {
+        // create chained environment, return (env, in_); any expression in
+        // a let binding becomes a thunk with an update, when stepping into
+        // we push UpdateCont for the allocation, and when value +
+        // UpdateCont we update.
+
+        // NB that let shares the binding environment (recursive):
+        // nix-repl> let a = b; b = 10; in a
+        // 10
+        // nix-repl> let b = 10; a = b; in a
+        // 10
+        // }
+        (Expr::App { f, args, arity }, _) => {
+            stack.write(mc).push(Cont::ApplyCont {
+                env: env,
+                args: args.to_vec(),
+                arity: *arity,
+            });
+            (*f, env)
+        }
+        // (Expr::Thunk { t, env }, _) => {
+        //     stack.push(Gc::allocate(mc, Cont::UpdateCont {
+        //         update_expr: expr, // use gc pointer here, not value
+        //     }));
+        //     // need really only one blackhole here, can do pointer comparison.
+        //     expr = black_hole;
+        //     (f, env)
+        // },
+        (Expr::PrimOp { name, arity }, Some(cont)) => {
+            match cont {
+                Cont::ApplyCont { arity: a2, .. } => {
+                    match arity.cmp(&a2) {
+                        Less => {}    // apply `arity` arguments to primop, push new applycont with remaining args
+                        Equal => {}   // apply arity, done
+                        Greater => {} // return partial application
+                    }
+                    (expr, env)
                 }
+                _default => panic!("invalid state, expected apply cont but found {:?}", cont),
             }
         }
-        // Expr::PrimOp { name, arity } => *self,
-        // Expr::PrimOpApp { chain, arity } => panic!("invalid state"),
-        default => {
-            println!("default");
-            expr
+        (Expr::Lambda { .. }, _) => {
+            // check top of stack, follow call rules
+            (expr, env)
+        }
+        _default => {
+            println!("ret default");
+            (expr, env)
         }
     }
 }
@@ -75,7 +143,7 @@ fn eval<'gc, 'context>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
+    // #[test]
     // fn check_done() {
     //     let i = Expr::Int(10);
     //     let env = Environment::new();
@@ -83,28 +151,43 @@ mod tests {
     // }
     #[test]
     fn check_application() {
-        let mut arena = ExprArena::new(ArenaParameters::default(), |mc| ExprRoot { root: Gc::allocate(mc, Expr::App {
-            f: Gc::allocate(
+        let mut arena = ExprArena::new(ArenaParameters::default(), |mc| ExprRoot {
+            // 2 + 1
+            // ((+ 2) 1)
+            //
+            // beta-reduction proceeds by evaluating f (+ in this case) first,
+            // resulting in a partially applied PrimOp (PrimOpPap)
+            root: Gc::allocate(
                 mc,
                 Expr::App {
                     f: Gc::allocate(
                         mc,
-                        Expr::PrimOp {
-                            name: "plus",
-                            arity: 2,
+                        Expr::App {
+                            f: Gc::allocate(
+                                mc,
+                                Expr::PrimOp {
+                                    name: "plus",
+                                    arity: 2,
+                                },
+                            ),
+                            arity: 1,
+                            args: vec![Gc::allocate(mc, Expr::Int(2))],
                         },
                     ),
-                    body: Gc::allocate(mc, Expr::Int(2)),
+                    arity: 1,
+                    args: vec![Gc::allocate(mc, Expr::Int(1))],
                 },
             ),
-            body: Gc::allocate(mc, Expr::Int(1)),
-        })});
+            stack: GcCell::allocate(mc, Vec::new()),
+            env: Gc::allocate(mc, Env::new_root()),
+        });
         arena.mutate(|mc, root| {
-            eval(mc, root.root);
+            let black_hole = Gc::allocate(mc, Expr::Null());
+            let (f, env) = step(mc, root.root, root.env, black_hole, root.stack);
+            let (f, env) = step(mc, f, env, black_hole, root.stack);
+            let (f, env) = step(mc, f, env, black_hole, root.stack);
+            let (f, env) = step(mc, f, env, black_hole, root.stack);
+            println!("eval: {:?}", f);
         });
     }
 }
-
-// {env: ., (\x.\y.x + y) 1 2}
-// {env: x=1, (\y.x + y) 2}
-// {env: x=1, }
