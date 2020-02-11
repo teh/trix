@@ -1,80 +1,9 @@
+use crate::expr::{Cont, Env, Expr, ExprArena, ExprRoot, GcEnv, GcExpr, GcStack};
 use gc_arena::{make_arena, ArenaParameters, Collect, Gc, GcCell, MutationContext};
 use std::cmp::Ordering;
-use std::collections::HashMap;
 
-#[derive(Debug, Clone, Collect)]
-#[collect(no_drop)]
-///
-pub enum Expr<'gc> {
-    Null(),
-    Int(i64),
-    Float(f64),
-    Bool(bool),
-    String(&'gc str),
-    Path(&'gc str),
-    List(Vec<GcExpr<'gc>>),
-    Attrs {},
-    Lambda {
-        e: GcExpr<'gc>,
-    },
-    App {
-        f: GcExpr<'gc>,
-        args: Vec<GcExpr<'gc>>,
-        arity: usize,
-    },
-    Pap {
-        f: GcExpr<'gc>,
-        args: Vec<GcExpr<'gc>>,
-        arity: usize,
-    },
-    Thunk {
-        t: GcExpr<'gc>,
-    },
-    PrimOp {
-        name: &'gc str,
-        arity: usize,
-    },
-}
-
-#[derive(Debug, Clone, Collect)]
-#[collect(no_drop)]
-pub struct Env<'gc> {
-    up: Option<Gc<'gc, Env<'gc>>>,
-    values: HashMap<String, GcExpr<'gc>>,
-}
-
-#[derive(Debug, Clone, Collect)]
-#[collect(no_drop)]
-pub enum Cont<'gc> {
-    ApplyCont {
-        args: Vec<GcExpr<'gc>>,
-        env: GcEnv<'gc>,
-        arity: usize,
-    },
-}
-
-impl<'gc> Env<'gc> {
-    fn new_root() -> Env<'gc> {
-        Env {
-            up: None,
-            values: HashMap::new(),
-        }
-    }
-}
-
-type GcExpr<'gc> = Gc<'gc, Expr<'gc>>;
-type GcEnv<'gc> = Gc<'gc, Env<'gc>>;
-type GcStack<'gc> = GcCell<'gc, Vec<Cont<'gc>>>;
-
-#[derive(Debug, Copy, Clone, Collect)]
-#[collect(no_drop)]
-struct ExprRoot<'gc> {
-    root: GcExpr<'gc>,
-    env: GcEnv<'gc>,
-    stack: GcStack<'gc>,
-}
-
-make_arena!(ExprArena, ExprRoot);
+pub mod expr;
+pub mod parser;
 
 fn step<'gc>(
     mc: MutationContext<'gc, '_>,
@@ -106,7 +35,9 @@ fn step<'gc>(
             // pointing to a Lambda or PrimOp yet
             println!("app {:?}", **f);
             match **f {
-                Expr::PrimOp { arity: op_arity, name, .. } => {
+                Expr::PrimOp {
+                    arity: op_arity, name, ..
+                } => {
                     match op_arity.cmp(&arity) {
                         // apply `arity` arguments to primop, push new applycont with
                         // remaining args
@@ -116,16 +47,20 @@ fn step<'gc>(
                         }
                         Ordering::Equal => {
                             // rule EXACT
+
+                            // TODO what if args not evaluated yet? Probably
+                            // need to push a ForceEvalCont and return the first
+                            // arg to be evaluated. When that returns
+                            // ForceEvalCont pops of one Arg, force evals the
+                            // next one etc until done, then re-does the App.
                             let l = (*args)[0];
                             let r = (*args)[1];
                             match (name, &*l, &*r) {
                                 ("plus", Expr::Int(left), Expr::Int(right)) => {
-                                    let expr2 = Gc::allocate(
-                                        mc, Expr::Int(left + right)
-                                    );
+                                    let expr2 = Gc::allocate(mc, Expr::Int(left + right));
                                     (expr2, env)
-                                    }
-                                _ => unreachable!("invalid op {}/{}", name, arity)
+                                }
+                                _ => unreachable!("invalid op {}/{}", name, arity),
                             }
                         }
                         Ordering::Greater => {
@@ -176,22 +111,10 @@ fn step<'gc>(
             );
             (expr2, env)
         }
-        // (Expr::Thunk { t, env }, _) => {
-        //     stack.push(Gc::allocate(mc, Cont::UpdateCont {
-        //         update_expr: expr, // use gc pointer here, not value
-        //     }));
-        //     // need really only one blackhole here, can do pointer comparison.
-        //     expr = black_hole;
-        //     (f, env)
-        // },
-        // (
-        //     Expr::PrimOp { name, arity: op_arity },
-        //     Some(Cont::ApplyCont {
-        //         arity: ap_arity, args, ..
-        //     }),
-        // ) => {
-        //     stack.write(mc).pop(); // we're handling the ApplyCont, pop from stack
-
+        (Expr::Thunk { t }, _) => {
+            // TODO - blackholing
+            (*t, env)
+        }
         // }
         // Expr::Lambda { .. } => {
         //     // check top of stack, follow call rules
@@ -208,6 +131,8 @@ fn step<'gc>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gc_arena::rootless_arena;
+
     // #[test]
     // fn check_done() {
     //     let i = Expr::Int(10);
@@ -215,7 +140,7 @@ mod tests {
     //     i.eval(&env);
     // }
     #[test]
-    fn check_application() {
+    fn check_pap_primop() {
         let mut arena = ExprArena::new(ArenaParameters::default(), |mc| ExprRoot {
             // 2 + 1
             // ((+ 2) 1)
@@ -240,10 +165,78 @@ mod tests {
         arena.mutate(|mc, root| {
             let black_hole = Gc::allocate(mc, Expr::Null());
             let mut s = (root.root, root.env);
-            for _ in 0..5 {
+            // TODO - need function that is essentialy `eval` that runs until no
+            // redex left.
+            for i in 0..10 {
                 s = step(mc, s.0, s.1, black_hole, root.stack);
+                match *s.0 {
+                    Expr::Int(v) => {
+                        assert_eq!(v, 3);
+                        break;
+                    }
+                    _ => (),
+                }
             }
-            println!("eval: {:?}", s);
+        });
+    }
+
+    #[test]
+    fn check_app_primop() {
+        let mut arena = ExprArena::new(ArenaParameters::default(), |mc| ExprRoot {
+            root: Gc::allocate(
+                mc,
+                Expr::App {
+                    f: Gc::allocate(mc, Expr::PrimOp { name: "plus", arity: 2 }),
+                    arity: 2,
+                    args: vec![Gc::allocate(mc, Expr::Int(2)), Gc::allocate(mc, Expr::Int(1))],
+                },
+            ),
+            stack: GcCell::allocate(mc, Vec::new()),
+            env: Gc::allocate(mc, Env::new_root()),
+        });
+        arena.mutate(|mc, root| {
+            let black_hole = Gc::allocate(mc, Expr::Null());
+            let mut s = (root.root, root.env);
+            // TODO - need function that is essentialy `eval` that runs until no
+            // redex left.
+            for i in 0..10 {
+                s = step(mc, s.0, s.1, black_hole, root.stack);
+                match *s.0 {
+                    Expr::Int(v) => {
+                        assert_eq!(v, 3);
+                        break;
+                    }
+                    _ => (),
+                }
+            }
+        });
+    }
+
+    #[test]
+    fn check_thunk() {
+        rootless_arena(|mc| {
+            let root = ExprRoot {
+                root: Gc::allocate(
+                    mc,
+                    Expr::Thunk {
+                        t: Gc::allocate(mc, Expr::String("thunk")),
+                    },
+                ),
+                stack: GcCell::allocate(mc, Vec::new()),
+                env: Gc::allocate(mc, Env::new_root()),
+            };
+            let black_hole = Gc::allocate(mc, Expr::Null());
+            let mut s = (root.root, root.env);
+            for i in 0..10 {
+                s = step(mc, s.0, s.1, black_hole, root.stack);
+                match *s.0 {
+                    Expr::String(s) => {
+                        assert_eq!(s, "thunk");
+                        break;
+                    }
+                    _ => (),
+                }
+            }
         });
     }
 }

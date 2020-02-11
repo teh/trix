@@ -6,3 +6,5 @@ edition = "2018"
 
 [dependencies]
 gc-arena = "0.2.0"
+nom = "5.1.0"
+
