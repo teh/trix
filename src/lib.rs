@@ -1,6 +1,6 @@
 use gc_arena::{make_arena, ArenaParameters, Collect, Gc, GcCell, MutationContext};
-use std::collections::HashMap;
 use std::cmp::Ordering;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Collect)]
 #[collect(no_drop)]
@@ -80,17 +80,15 @@ fn step<'gc>(
     mc: MutationContext<'gc, '_>,
     expr: GcExpr<'gc>,
     env: GcEnv<'gc>,
-    black_hole: GcExpr<'gc>,
+    _black_hole: GcExpr<'gc>,
     stack: GcStack<'gc>,
 ) -> (GcExpr<'gc>, GcEnv<'gc>) {
+    println!("\n");
     println!("step {:?}", *expr);
-
-    if Gc::ptr_eq(expr, black_hole) {
-        panic!("found black_hole, probably infinite recursion");
-    }
+    println!("   s {:?}", stack.read());
 
     let stack_top = stack.read().last().cloned();
-    match (&*expr, &stack_top) {
+    match (&*expr, stack_top) {
         // (Expr::Let { bindings, in_ }, _) => {
         // create chained environment, return (env, in_); any expression in
         // a let binding becomes a thunk with an update, when stepping into
@@ -103,13 +101,76 @@ fn step<'gc>(
         // nix-repl> let b = 10; a = b; in a
         // 10
         // }
-        (Expr::App { f, args, arity }, _) => {
-            stack.write(mc).push(Cont::ApplyCont {
-                env: env,
-                args: args.to_vec(),
-                arity: *arity,
-            });
-            (*f, env)
+        (Expr::App { f, args, arity, .. }, _) => {
+            // TODO only push ApplyCont if either arity mismatch _or_ f is not
+            // pointing to a Lambda or PrimOp yet
+            println!("app {:?}", **f);
+            match **f {
+                Expr::PrimOp { arity: op_arity, name, .. } => {
+                    match op_arity.cmp(&arity) {
+                        // apply `arity` arguments to primop, push new applycont with
+                        // remaining args
+                        Ordering::Less => {
+                            // rule CALLK
+                            unreachable!("execute primop and push new application cont")
+                        }
+                        Ordering::Equal => {
+                            // rule EXACT
+                            if name == "plus" {
+                                let expr2 = Gc::allocate(
+                                    mc, Expr::Int(10)
+                                );
+                                (expr2, env)
+                            } else {
+                                unreachable!("execute primop {}", name)
+                            }
+                        }
+                        Ordering::Greater => {
+                            // rule PAP
+                            let expr2 = Gc::allocate(
+                                mc,
+                                Expr::Pap {
+                                    f: *f,
+                                    args: args.to_vec(),
+                                    arity: op_arity - arity,
+                                },
+                            );
+                            (expr2, env)
+                        }
+                    }
+                }
+                ref _default => {
+                    // rule TCALL
+                    stack.write(mc).push(Cont::ApplyCont {
+                        env: env,
+                        args: args.to_vec(),
+                        arity: *arity,
+                    });
+                    (*f, env)
+                }
+            }
+        }
+        (
+            Expr::Pap { f, args, arity },
+            Some(Cont::ApplyCont {
+                args: ref cont_args,
+                arity: cont_arity,
+                ..
+            }),
+        ) => {
+            // partial apply just mops up new arguments and returns a normal
+            // apply.
+            let mut newargs = args.to_vec();
+            newargs.extend(cont_args.to_vec());
+            let expr2 = Gc::allocate(
+                mc,
+                Expr::App {
+                    f: *f,
+                    args: newargs,
+                    arity: arity + cont_arity,
+                },
+            );
+            (expr2, env)
         }
         // (Expr::Thunk { t, env }, _) => {
         //     stack.push(Gc::allocate(mc, Cont::UpdateCont {
@@ -119,33 +180,23 @@ fn step<'gc>(
         //     expr = black_hole;
         //     (f, env)
         // },
-        (Expr::PrimOp { name, arity: op_arity }, Some(Cont::ApplyCont { arity: ap_arity, args, .. })) => {
-            match op_arity.cmp(&ap_arity) {
-                // apply `arity` arguments to primop, push new applycont with
-                // remaining args
-                Ordering::Less => {
-                    unreachable!("execute primop and push new application cont")
-                }
-                Ordering::Equal => {
-                    unreachable!("execute primop")
-                },
-                Ordering::Greater => {
-                    let expr2 = Gc::allocate(mc, Expr::Pap {
-                        f: expr,
-                        args: args.to_vec(),
-                        arity: op_arity - ap_arity,
-                    });
-                    (expr2, env)
-                },
-            }
-        }
-        (Expr::Lambda { .. }, _) => {
-            // check top of stack, follow call rules
-            (expr, env)
-        }
-        _default => {
-            println!("ret default");
-            (expr, env)
+        // (
+        //     Expr::PrimOp { name, arity: op_arity },
+        //     Some(Cont::ApplyCont {
+        //         arity: ap_arity, args, ..
+        //     }),
+        // ) => {
+        //     stack.write(mc).pop(); // we're handling the ApplyCont, pop from stack
+
+        // }
+        // Expr::Lambda { .. } => {
+        //     // check top of stack, follow call rules
+        //     unreachable!()
+        //     // (expr, env)
+        // }
+        _ => {
+            unreachable!()
+            // (expr, env)
         }
     }
 }
@@ -184,12 +235,11 @@ mod tests {
         });
         arena.mutate(|mc, root| {
             let black_hole = Gc::allocate(mc, Expr::Null());
-            let (f, env) = (root.root, root.env);
-            let (f, env) = step(mc, f, env, black_hole, root.stack);
-            let (f, env) = step(mc, f, env, black_hole, root.stack);
-            let (f, env) = step(mc, f, env, black_hole, root.stack);
-            let (f, env) = step(mc, f, env, black_hole, root.stack);
-            println!("eval: {:?}", f);
+            let mut s = (root.root, root.env);
+            for _ in 0..5 {
+                s = step(mc, s.0, s.1, black_hole, root.stack);
+            }
+            println!("eval: {:?}", s);
         });
     }
 }
