@@ -1,5 +1,6 @@
 use gc_arena::{make_arena, ArenaParameters, Collect, Gc, GcCell, MutationContext};
 use std::collections::HashMap;
+use std::cmp::Ordering;
 
 #[derive(Debug, Clone, Collect)]
 #[collect(no_drop)]
@@ -17,6 +18,11 @@ pub enum Expr<'gc> {
         e: GcExpr<'gc>,
     },
     App {
+        f: GcExpr<'gc>,
+        args: Vec<GcExpr<'gc>>,
+        arity: usize,
+    },
+    Pap {
         f: GcExpr<'gc>,
         args: Vec<GcExpr<'gc>>,
         arity: usize,
@@ -83,11 +89,8 @@ fn step<'gc>(
         panic!("found black_hole, probably infinite recursion");
     }
 
-    let xx = {
-        let s = stack.read();
-        s.last().cloned()
-    };
-    match (&*expr, &xx) {
+    let stack_top = stack.read().last().cloned();
+    match (&*expr, &stack_top) {
         // (Expr::Let { bindings, in_ }, _) => {
         // create chained environment, return (env, in_); any expression in
         // a let binding becomes a thunk with an update, when stepping into
@@ -116,17 +119,24 @@ fn step<'gc>(
         //     expr = black_hole;
         //     (f, env)
         // },
-        (Expr::PrimOp { name, arity }, Some(cont)) => {
-            match cont {
-                Cont::ApplyCont { arity: a2, .. } => {
-                    match arity.cmp(&a2) {
-                        Less => {}    // apply `arity` arguments to primop, push new applycont with remaining args
-                        Equal => {}   // apply arity, done
-                        Greater => {} // return partial application
-                    }
-                    (expr, env)
+        (Expr::PrimOp { name, arity: op_arity }, Some(Cont::ApplyCont { arity: ap_arity, args, .. })) => {
+            match op_arity.cmp(&ap_arity) {
+                // apply `arity` arguments to primop, push new applycont with
+                // remaining args
+                Ordering::Less => {
+                    unreachable!("execute primop and push new application cont")
                 }
-                _default => panic!("invalid state, expected apply cont but found {:?}", cont),
+                Ordering::Equal => {
+                    unreachable!("execute primop")
+                },
+                Ordering::Greater => {
+                    let expr2 = Gc::allocate(mc, Expr::Pap {
+                        f: expr,
+                        args: args.to_vec(),
+                        arity: op_arity - ap_arity,
+                    });
+                    (expr2, env)
+                },
             }
         }
         (Expr::Lambda { .. }, _) => {
@@ -154,22 +164,13 @@ mod tests {
         let mut arena = ExprArena::new(ArenaParameters::default(), |mc| ExprRoot {
             // 2 + 1
             // ((+ 2) 1)
-            //
-            // beta-reduction proceeds by evaluating f (+ in this case) first,
-            // resulting in a partially applied PrimOp (PrimOpPap)
             root: Gc::allocate(
                 mc,
                 Expr::App {
                     f: Gc::allocate(
                         mc,
                         Expr::App {
-                            f: Gc::allocate(
-                                mc,
-                                Expr::PrimOp {
-                                    name: "plus",
-                                    arity: 2,
-                                },
-                            ),
+                            f: Gc::allocate(mc, Expr::PrimOp { name: "plus", arity: 2 }),
                             arity: 1,
                             args: vec![Gc::allocate(mc, Expr::Int(2))],
                         },
@@ -183,7 +184,8 @@ mod tests {
         });
         arena.mutate(|mc, root| {
             let black_hole = Gc::allocate(mc, Expr::Null());
-            let (f, env) = step(mc, root.root, root.env, black_hole, root.stack);
+            let (f, env) = (root.root, root.env);
+            let (f, env) = step(mc, f, env, black_hole, root.stack);
             let (f, env) = step(mc, f, env, black_hole, root.stack);
             let (f, env) = step(mc, f, env, black_hole, root.stack);
             let (f, env) = step(mc, f, env, black_hole, root.stack);
