@@ -116,13 +116,16 @@ fn step<'gc>(
                         }
                         Ordering::Equal => {
                             // rule EXACT
-                            if name == "plus" {
-                                let expr2 = Gc::allocate(
-                                    mc, Expr::Int(10)
-                                );
-                                (expr2, env)
-                            } else {
-                                unreachable!("execute primop {}", name)
+                            let l = (*args)[0];
+                            let r = (*args)[1];
+                            match (name, &*l, &*r) {
+                                ("plus", Expr::Int(left), Expr::Int(right)) => {
+                                    let expr2 = Gc::allocate(
+                                        mc, Expr::Int(left + right)
+                                    );
+                                    (expr2, env)
+                                    }
+                                _ => unreachable!("invalid op {}/{}", name, arity)
                             }
                         }
                         Ordering::Greater => {
@@ -160,6 +163,7 @@ fn step<'gc>(
         ) => {
             // partial apply just mops up new arguments and returns a normal
             // apply.
+            stack.write(mc).pop();
             let mut newargs = args.to_vec();
             newargs.extend(cont_args.to_vec());
             let expr2 = Gc::allocate(
