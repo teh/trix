@@ -1,0 +1,14 @@
+// This module is midly more messy than a "classic" AST build because I'm
+// building the AST using gc-arena allocations. This makes the AST immediately
+// usable for interpretation. I'm not sure it's a great decision to conflate the
+// two so early, but it's a decision.
+use crate::expr::{Cont, Env, Expr, GcEnv, GcExpr, GcStack};
+use gc_arena::{rootless_arena, Gc, MutationContext};
+use std::str::FromStr;
+
+grammar<'gc, 'cx>(mc: MutationContext<'gc, 'cx>);
+
+pub Int: GcExpr<'gc> = {
+    r"[0-9]+" => Gc::allocate(mc, Expr::Int(i64::from_str(<>).unwrap())),
+};
+

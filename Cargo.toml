@@ -3,8 +3,13 @@ name = "trix"
 version = "0.1.0"
 authors = ["Tom Hunger <tehunger@gmail.com>"]
 edition = "2018"
+build = "build.rs"
+
 
 [dependencies]
 gc-arena = "0.2.0"
-nom = "5.1.0"
+lalrpop-util = "0.17.2"
+regex = "0.2.0"
 
+[build-dependencies]
+lalrpop = "0.17.2"

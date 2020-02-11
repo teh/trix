@@ -1,9 +1,13 @@
 use crate::expr::{Cont, Env, Expr, ExprArena, ExprRoot, GcEnv, GcExpr, GcStack};
 use gc_arena::{make_arena, ArenaParameters, Collect, Gc, GcCell, MutationContext};
 use std::cmp::Ordering;
+#[macro_use] extern crate lalrpop_util;
+
 
 pub mod expr;
 pub mod parser;
+lalrpop_mod!(pub expr_parser);
+
 
 fn step<'gc>(
     mc: MutationContext<'gc, '_>,
@@ -133,12 +137,6 @@ mod tests {
     use super::*;
     use gc_arena::rootless_arena;
 
-    // #[test]
-    // fn check_done() {
-    //     let i = Expr::Int(10);
-    //     let env = Environment::new();
-    //     i.eval(&env);
-    // }
     #[test]
     fn check_pap_primop() {
         let mut arena = ExprArena::new(ArenaParameters::default(), |mc| ExprRoot {
