@@ -41,7 +41,8 @@ pub enum Expr<'gc> {
     Lambda {
         arg: Option<Symbol>,
         body: GcExpr<'gc>,
-        formals: Vec<GcExpr<'gc>>,
+        // bool == has ellipsis ...
+        formals: (Vec<GcExpr<'gc>>, bool),
     },
     App {
         f: GcExpr<'gc>,
@@ -50,7 +51,7 @@ pub enum Expr<'gc> {
     },
     Select {
         expr: GcExpr<'gc>,
-        attr_path: Vec<GcExpr<'gc>>,
+        attr_path: GcExpr<'gc>,
     },
     SelectOr {
         expr: GcExpr<'gc>,
@@ -82,8 +83,7 @@ pub enum Expr<'gc> {
     },
     Let {
         bindings: HashMap<String, GcExpr<'gc>>,
-        rec_bindings: HashMap<String, GcExpr<'gc>>, // TODO replace with either-like struct
-        inherited: HashMap<String, GcExpr<'gc>>,    // inherit always inherits from parent env
+        // inherited: HashMap<String, GcExpr<'gc>>,    // inherit always inherits from parent env
         body: GcExpr<'gc>,                          // let ...; in body
     },
 }

@@ -25,13 +25,13 @@ pub expr: GcExpr<'gc> = { expr_function };
 
 pub expr_function: GcExpr<'gc> = {
     <arg:Id> ":" <body:expr_function> =>
-        { Gc::allocate(mc, Expr::Lambda { arg: Some(arg), body, formals: vec![] }) },
+        { Gc::allocate(mc, Expr::Lambda { arg: Some(arg), body, formals: (vec![], false) }) },
     "{" <formals:formals> "}" ":" <body:expr_function> =>
-        { Gc::allocate(mc, Expr::Lambda { arg: None, formals: formals, body }) },
+        { Gc::allocate(mc, Expr::Lambda { arg: None, formals, body }) },
     "{" <formals:formals> "}" "@" <arg:Id> ":" <body:expr_function> =>
-        { Gc::allocate(mc, Expr::Lambda { arg: Some(arg), formals: formals, body }) },
+        { Gc::allocate(mc, Expr::Lambda { arg: Some(arg), formals, body }) },
     <arg:Id> "@" "{" <formals:formals> "}" ":" <body:expr_function> =>
-        { Gc::allocate(mc, Expr::Lambda { arg: Some(arg), formals: formals, body }) },
+        { Gc::allocate(mc, Expr::Lambda { arg: Some(arg), formals, body }) },
     "assert" <expr:expr> ";" <body:expr_function> =>
         { Gc::allocate(mc, Expr::Assert { expr, body }) },
     "with" <expr:expr> ";" <body:expr_function> =>
@@ -47,34 +47,40 @@ pub expr_if: GcExpr<'gc> = {
     expr_op_p13,
 }
 
-
 // -----------------------------------------------------------------------
-
+// operator precedence
+// https://nixos.org/nix/manual/#sec-language-operators
 pub expr_op_p1: GcExpr<'gc> = {
     <left:expr_op_p1> "." <right:expr_simple> =>
-        { Gc::allocate(mc, Expr::Select { f: left, args: vec![right] }) },
+        { Gc::allocate(mc, Expr::Select { expr: left, attr_path: right }) },
+    expr_simple
 }
 pub expr_op_p2: GcExpr<'gc> = {
     <left:expr_op_p2> <right:expr_op_p1> =>
         { Gc::allocate(mc, Expr::App { arity: 1, f: left, args: vec![right] }) },
+    expr_op_p1
 }
 pub expr_op_p3: GcExpr<'gc> = {
     "-" <expr:expr_op_p2> =>
         { Gc::allocate(mc, Expr::UnaryMinus { expr }) },
+    expr_op_p2
 }
 pub expr_op_p4: GcExpr<'gc> = {
     <left:expr_op_p4> "?" <right:expr_op_p3> =>
         { Gc::allocate(mc, Expr::BinaryOp { name: "?",  left, right }) },
+    expr_op_p3
 }
 pub expr_op_p5: GcExpr<'gc> = {
     <left:expr_op_p5> "++" <right:expr_op_p4> =>
         { Gc::allocate(mc, Expr::BinaryOp { name: "++",  left, right }) },
+    expr_op_p4
 }
 pub expr_op_p6: GcExpr<'gc> = {
     <left:expr_op_p6> "*" <right:expr_op_p5> =>
         { Gc::allocate(mc, Expr::BinaryOp { name: "*",  left, right }) },
     <left:expr_op_p6> "/" <right:expr_op_p5> =>
         { Gc::allocate(mc, Expr::BinaryOp { name: "/",  left, right }) },
+    expr_op_p5
 }
 pub expr_op_p7: GcExpr<'gc> = {
     // <left:expr_op> "+" <right:expr_op> =>
@@ -83,14 +89,17 @@ pub expr_op_p7: GcExpr<'gc> = {
         { Gc::allocate(mc, Expr::BinaryOp { name: "+",  left, right }) },
     <left:expr_op_p7> "-" <right:expr_op_p6> =>
         { Gc::allocate(mc, Expr::BinaryOp { name: "-",  left, right }) },
+    expr_op_p6
 }
 pub expr_op_p8: GcExpr<'gc> = {
     "!" <expr:expr_op_p7> =>
         { Gc::allocate(mc, Expr::UnaryNot { expr }) }, // TODO mono-op
+    expr_op_p7
 }
 pub expr_op_p9: GcExpr<'gc> = {
     <left:expr_op_p9> "//" <right:expr_op_p8> =>
         { Gc::allocate(mc, Expr::BinaryOp { name: "//",  left, right }) },
+    expr_op_p8
 }
 pub expr_op_p10: GcExpr<'gc> = {
     <left:expr_op_p10> "<" <right:expr_op_p9> =>
@@ -101,46 +110,47 @@ pub expr_op_p10: GcExpr<'gc> = {
         { Gc::allocate(mc, Expr::BinaryOp { name: ">",  left, right }) },
     <left:expr_op_p10> ">=" <right:expr_op_p9> =>
         { Gc::allocate(mc, Expr::BinaryOp { name: ">=",  left, right }) },
+    expr_op_p9,
 }
 pub expr_op_p11: GcExpr<'gc> = {
     <left:expr_op_p11> "==" <right:expr_op_p10> =>
         { Gc::allocate(mc, Expr::BinaryOp { name: "==",  left, right }) },
     <left:expr_op_p11> "!=" <right:expr_op_p10> =>
         { Gc::allocate(mc, Expr::BinaryOp { name: "!=",  left, right }) },
+    expr_op_p10,
 }
 pub expr_op_p12: GcExpr<'gc> = {
     <left:expr_op_p12> "&&" <right:expr_op_p11> =>
         { Gc::allocate(mc, Expr::BinaryOp { name: "&&",  left, right }) },
+    expr_op_p11,
 }
 pub expr_op_p13: GcExpr<'gc> = {
     <left:expr_op_p13> "||" <right:expr_op_p12> =>
         { Gc::allocate(mc, Expr::BinaryOp { name: "||",  left, right }) },
+    expr_op_p12,
 }
 pub expr_op_p14: GcExpr<'gc> = {
     <left:expr_op_p14> "->" <right:expr_op_p13> =>
         { Gc::allocate(mc, Expr::BinaryOp { name: "->",  left, right }) },
+    expr_op_p13,
 }
 // -----------------------------------------------------------------------
 
-// TODO list concat different to string concat ..
-// <left:expr_op> "?" <right:attrpath> =>
-    //     { Gc::allocate(mc, Expr::BinaryOp { name: "?",  left, right }) },
 
-
-expr_select: GcExpr<'gc> = {
-    <expr:expr_simple> "." <attr_path:attrpath> => {
-        Gc::allocate(mc, Expr::Select { expr, attr_path })
-    },
-    // { a = "a"; }.b or "b" - I had no idea ..
-    <expr:expr_simple> "." <attr_path_left:attrpath> "or" <attr_path_right:attrpath> => {
-        Gc::allocate(mc, Expr::SelectOr { expr, attr_path_left, attr_path_right })
-    },
-    // | /* Backwards compatibility: because Nixpkgs has a rarely used
-    //    function named ‘or’, allow stuff like ‘map or [...]’. */
-    // expr_simple OR_KW
-    // { $$ = new ExprApp(CUR_POS, $1, new ExprVar(CUR_POS, data->symbols.create("or"))); }
-    expr_simple
-}
+// expr_select: GcExpr<'gc> = {
+//     <expr:expr_simple> "." <attr_path:attrpath> => {
+//         Gc::allocate(mc, Expr::Select { expr, attr_path })
+//     },
+//     // { a = "a"; }.b or "b" - I had no idea ..
+//     <expr:expr_simple> "." <attr_path_left:attrpath> "or" <attr_path_right:attrpath> => {
+//         Gc::allocate(mc, Expr::SelectOr { expr, attr_path_left, attr_path_right })
+//     },
+//     // | /* Backwards compatibility: because Nixpkgs has a rarely used
+//     //    function named ‘or’, allow stuff like ‘map or [...]’. */
+//     // expr_simple OR_KW
+//     // { $$ = new ExprApp(CUR_POS, $1, new ExprVar(CUR_POS, data->symbols.create("or"))); }
+//     expr_simple
+// }
 
 // TODO what is HPATH and SPATH?
 // TODO do we want to keep URIs?
@@ -171,10 +181,14 @@ expr_simple: GcExpr<'gc> = {
     //     { // TODO make binds recursive here? Seems to me they should always return recursive?
     //         Gc::allocate(mc, Expr::Select(expr, attr_path: Symbol("body")) }
     "rec" "{" <attrs:binds> "}" => {
-        Gc::allocate(mc, Expr::Attrs{ recursive: true, attrs })
+        Gc::allocate(mc, Expr::Attrs { recursive: true, attrs })
     }, // replace attrs?
-    "{" <attrs:binds> "}" => { attrs },
-    "[" <list:expr_list> "]" => { list },
+    "{" <attrs:binds> "}" => {
+        Gc::allocate(mc, Expr::Attrs { recursive: false, attrs })
+    },
+    "[" <list:expr_list> "]" => {
+        Gc::allocate(mc, Expr::List(list))
+    },
 }
 
 // TODO - string interpolation needs to mop up symbols until it hits "${"
@@ -205,18 +219,18 @@ string_parts: String = {
 //   ;
 
 binds: HashMap<String, GcExpr<'gc>> = {
-    <binds:binds> <attr_path:attrpath> "=" <expr:expr> ";" => {
+    <mut binds:binds> <attr_path:attrpath> "=" <expr:expr> ";" => {
         // TODO recursively populate maps if path, e.g. "a.b.c = 1;" should
         // become { a = { b = { c = 1; }; }; };
         binds.insert("testpath".to_string(), expr);
         binds
     },
-    <binds:binds> "inherit" <attrs:attrs> ";" => {
+    <mut binds:binds> "inherit" <attrs:attrs> ";" => {
         // todo, this is basically "x = x;" but expr in parent env.
         binds.insert("inherit attrs".to_string(), Gc::allocate(mc, Expr::InheritedVar("inherit attr".to_string())));
         binds
     },
-    <binds:binds> "inherit" "(" <expr:expr> ")" <attr_path:attrs> ";" => {
+    <mut binds:binds> "inherit" "(" <expr:expr> ")" <attr_path:attrs> ";" => {
         // Gc::allocate(mc, Expr::Select { expr, attr_path });
         binds // TODO select from subexpression created above
     },
@@ -224,11 +238,11 @@ binds: HashMap<String, GcExpr<'gc>> = {
 }
 
 attrs: Vec<GcExpr<'gc>> = {
-    <list:attrs> <attr:attr> => {
+    <mut list:attrs> <attr:attr> => {
         list.push(attr);
         list
     },
-   <list:attrs> <attr:string_attr> => {
+   <mut list:attrs> <attr:string_attr> => {
        // TODO check string attr is not "dynamic", i.e. doens't
        // have an expression like "${}" in the string.
        list.push(attr);
@@ -238,15 +252,15 @@ attrs: Vec<GcExpr<'gc>> = {
 }
 
 attrpath: Vec<GcExpr<'gc>> = {
-    <attr_path:attrpath> "." <attr:attr> => {
+    <mut attr_path:attrpath> "." <attr:attr> => {
         attr_path.push(attr);
         attr_path
     },
-    <attr_path:attrpath> "." <string_attr:string_attr> => {
+    <mut attr_path:attrpath> "." <string_attr:string_attr> => {
         attr_path.push(string_attr);
         attr_path
     },
-    <attr:attr> => { attr },
+    <attr:attr> => { vec![attr] },
     string_attr => { vec![<>] },
 }
 
@@ -268,14 +282,14 @@ string_attr: GcExpr<'gc> = {
 }
 
 expr_list: Vec<GcExpr<'gc>> = {
-    <list:expr_list> <select:expr_select> =>
-        { list.push(select); list },
+    <mut list:expr_list> <expr:expr_simple> =>
+        { list.push(expr); list },
     => Vec::new(),
 }
 
 // bool is for ellipsis
 formals: (Vec<GcExpr<'gc>>, bool) = {
-    <formal:formal> "," <formals:formals> => {
+    <formal:formal> "," <mut formals:formals> => {
         formals.0.push(formal); formals
     },
     <formal:formal> => {
