@@ -2,14 +2,14 @@
 // building the AST using gc-arena allocations. This makes the AST immediately
 // usable for interpretation. I'm not sure it's a great decision to conflate the
 // two so early, but it's a decision.
-use crate::expr::{Cont, Env, Expr, GcEnv, GcExpr, GcStack, Symbol};
-use gc_arena::{rootless_arena, Gc, MutationContext};
+use crate::expr::{Expr, GcExpr, Symbol};
+use gc_arena::{Gc, MutationContext};
 use std::str::FromStr;
 use std::collections::HashMap;
 
 grammar<'gc, 'cx>(mc: MutationContext<'gc, 'cx>);
 
-pub Id: String = {
+pub Id: Symbol = {
     r"[a-zA-Z_][a-zA-Z0-_'\\-]*" => Symbol::from(<>)
 }
 
@@ -52,96 +52,89 @@ pub expr_if: GcExpr<'gc> = {
 
 pub expr_op_p1: GcExpr<'gc> = {
     <left:expr_op_p1> "." <right:expr_simple> =>
-        { Gc::allocate(mc, Expr::Select { f: left,  args: vec![right] }) },
+        { Gc::allocate(mc, Expr::Select { f: left, args: vec![right] }) },
 }
 pub expr_op_p2: GcExpr<'gc> = {
     <left:expr_op_p2> <right:expr_op_p1> =>
-        { Gc::allocate(mc, Expr::App { f: left,  args: vec![right] }) },
+        { Gc::allocate(mc, Expr::App { arity: 1, f: left, args: vec![right] }) },
 }
 pub expr_op_p3: GcExpr<'gc> = {
-    "-" <right:expr_op_p2> =>
-        { Gc::allocate(mc, Expr::BinOp { name: "negate",  right, right }) },
+    "-" <expr:expr_op_p2> =>
+        { Gc::allocate(mc, Expr::UnaryMinus { expr }) },
 }
 pub expr_op_p4: GcExpr<'gc> = {
     <left:expr_op_p4> "?" <right:expr_op_p3> =>
-        { Gc::allocate(mc, Expr::BinOp { name: "?",  left, right }) },
+        { Gc::allocate(mc, Expr::BinaryOp { name: "?",  left, right }) },
 }
 pub expr_op_p5: GcExpr<'gc> = {
     <left:expr_op_p5> "++" <right:expr_op_p4> =>
-        { Gc::allocate(mc, Expr::BinOp { name: "++",  left, right }) },
+        { Gc::allocate(mc, Expr::BinaryOp { name: "++",  left, right }) },
 }
 pub expr_op_p6: GcExpr<'gc> = {
     <left:expr_op_p6> "*" <right:expr_op_p5> =>
-        { Gc::allocate(mc, Expr::BinOp { name: "*",  left, right }) },
+        { Gc::allocate(mc, Expr::BinaryOp { name: "*",  left, right }) },
     <left:expr_op_p6> "/" <right:expr_op_p5> =>
-        { Gc::allocate(mc, Expr::BinOp { name: "/",  left, right }) },
+        { Gc::allocate(mc, Expr::BinaryOp { name: "/",  left, right }) },
 }
 pub expr_op_p7: GcExpr<'gc> = {
     // <left:expr_op> "+" <right:expr_op> =>
-    //     { Gc::allocate(mc, Expr::BinOp { name: "string+",  left, right }) }, TODO string concat has higher precedence
+    //     { Gc::allocate(mc, Expr::BinaryOp { name: "string+",  left, right }) }, TODO string concat has higher precedence
     <left:expr_op_p7> "+" <right:expr_op_p6> =>
-        { Gc::allocate(mc, Expr::BinOp { name: "+",  left, right }) },
+        { Gc::allocate(mc, Expr::BinaryOp { name: "+",  left, right }) },
     <left:expr_op_p7> "-" <right:expr_op_p6> =>
-        { Gc::allocate(mc, Expr::BinOp { name: "-",  left, right }) },
+        { Gc::allocate(mc, Expr::BinaryOp { name: "-",  left, right }) },
 }
 pub expr_op_p8: GcExpr<'gc> = {
-    "!" <right:expr_op_p7> =>
-        { Gc::allocate(mc, Expr::BinOp { name: "!!",  right, right }) }, // TODO mono-op
+    "!" <expr:expr_op_p7> =>
+        { Gc::allocate(mc, Expr::UnaryNot { expr }) }, // TODO mono-op
 }
 pub expr_op_p9: GcExpr<'gc> = {
     <left:expr_op_p9> "//" <right:expr_op_p8> =>
-        { Gc::allocate(mc, Expr::BinOp { name: "//",  left, right }) },
+        { Gc::allocate(mc, Expr::BinaryOp { name: "//",  left, right }) },
 }
 pub expr_op_p10: GcExpr<'gc> = {
     <left:expr_op_p10> "<" <right:expr_op_p9> =>
-        { Gc::allocate(mc, Expr::BinOp { name: "<",  left, right }) },
+        { Gc::allocate(mc, Expr::BinaryOp { name: "<",  left, right }) },
     <left:expr_op_p10> "<=" <right:expr_op_p9> =>
-        { Gc::allocate(mc, Expr::BinOp { name: "<=",  left, right }) },
+        { Gc::allocate(mc, Expr::BinaryOp { name: "<=",  left, right }) },
     <left:expr_op_p10> ">" <right:expr_op_p9> =>
-        { Gc::allocate(mc, Expr::BinOp { name: ">",  left, right }) },
+        { Gc::allocate(mc, Expr::BinaryOp { name: ">",  left, right }) },
     <left:expr_op_p10> ">=" <right:expr_op_p9> =>
-        { Gc::allocate(mc, Expr::BinOp { name: ">=",  left, right }) },
+        { Gc::allocate(mc, Expr::BinaryOp { name: ">=",  left, right }) },
 }
 pub expr_op_p11: GcExpr<'gc> = {
     <left:expr_op_p11> "==" <right:expr_op_p10> =>
-        { Gc::allocate(mc, Expr::BinOp { name: "==",  left, right }) },
+        { Gc::allocate(mc, Expr::BinaryOp { name: "==",  left, right }) },
     <left:expr_op_p11> "!=" <right:expr_op_p10> =>
-        { Gc::allocate(mc, Expr::BinOp { name: "!=",  left, right }) },
+        { Gc::allocate(mc, Expr::BinaryOp { name: "!=",  left, right }) },
 }
 pub expr_op_p12: GcExpr<'gc> = {
     <left:expr_op_p12> "&&" <right:expr_op_p11> =>
-        { Gc::allocate(mc, Expr::BinOp { name: "&&",  left, right }) },
+        { Gc::allocate(mc, Expr::BinaryOp { name: "&&",  left, right }) },
 }
 pub expr_op_p13: GcExpr<'gc> = {
     <left:expr_op_p13> "||" <right:expr_op_p12> =>
-        { Gc::allocate(mc, Expr::BinOp { name: "||",  left, right }) },
+        { Gc::allocate(mc, Expr::BinaryOp { name: "||",  left, right }) },
 }
 pub expr_op_p14: GcExpr<'gc> = {
     <left:expr_op_p14> "->" <right:expr_op_p13> =>
-        { Gc::allocate(mc, Expr::BinOp { name: "->",  left, right }) },
+        { Gc::allocate(mc, Expr::BinaryOp { name: "->",  left, right }) },
 }
 // -----------------------------------------------------------------------
 
 // TODO list concat different to string concat ..
 // <left:expr_op> "?" <right:attrpath> =>
-    //     { Gc::allocate(mc, Expr::BinOp { name: "?",  left, right }) },
+    //     { Gc::allocate(mc, Expr::BinaryOp { name: "?",  left, right }) },
 
-
-
-pub expr_app: GcExpr<'gc> = {
-    <f:expr_app> <args:expr_select> =>
-        // TODO - in the current setup application is always arity 1, we can
-        // probably mop higher arities for some expressions (e.g. `map f [1 2 3]`)
-        { Gc::allocate(mc, Expr::App { f, arity: 1, args }) },
-    expr_select,  // { $$ = $1; } TODO <- what does the thing on the left do?
-}
 
 expr_select: GcExpr<'gc> = {
-    <expr:expr_simple> "." <attrpath:attrpath> =>
-        { Gc::allocate(mc, Expr::Select { expr, attrpath }) },
+    <expr:expr_simple> "." <attr_path:attrpath> => {
+        Gc::allocate(mc, Expr::Select { expr, attr_path })
+    },
     // { a = "a"; }.b or "b" - I had no idea ..
-    <expr:expr_simple> "." <attrpath_left:attrpath> "or" <attrpath_right:attrpath> =>
-        { Gc::allocate(mc, Expr::SelectOr { expr, attrpath_left, attrpath_right }) },
+    <expr:expr_simple> "." <attr_path_left:attrpath> "or" <attr_path_right:attrpath> => {
+        Gc::allocate(mc, Expr::SelectOr { expr, attr_path_left, attr_path_right })
+    },
     // | /* Backwards compatibility: because Nixpkgs has a rarely used
     //    function named ‘or’, allow stuff like ‘map or [...]’. */
     // expr_simple OR_KW
@@ -177,10 +170,10 @@ expr_simple: GcExpr<'gc> = {
     // "let" "{" <expr:binds> "}" =>
     //     { // TODO make binds recursive here? Seems to me they should always return recursive?
     //         Gc::allocate(mc, Expr::Select(expr, attr_path: Symbol("body")) }
-    "rec" "{" <bindings:binds> "}" => {
-        Gc::allocate(mc, Expr::Attrs{ recursive: true, attrs: bindings.attrs })
+    "rec" "{" <attrs:binds> "}" => {
+        Gc::allocate(mc, Expr::Attrs{ recursive: true, attrs })
     }, // replace attrs?
-    "{" <bindings:binds> "}" => { attrs },
+    "{" <attrs:binds> "}" => { attrs },
     "[" <list:expr_list> "]" => { list },
 }
 
@@ -215,16 +208,17 @@ binds: HashMap<String, GcExpr<'gc>> = {
     <binds:binds> <attr_path:attrpath> "=" <expr:expr> ";" => {
         // TODO recursively populate maps if path, e.g. "a.b.c = 1;" should
         // become { a = { b = { c = 1; }; }; };
-        binds.insert("testpath", expr);
+        binds.insert("testpath".to_string(), expr);
         binds
     },
     <binds:binds> "inherit" <attrs:attrs> ";" => {
         // todo, this is basically "x = x;" but expr in parent env.
-        binds.insert("inherit attrs", Gc::allocate(mc, Expr::InheritedVar("inherit attr")));
+        binds.insert("inherit attrs".to_string(), Gc::allocate(mc, Expr::InheritedVar("inherit attr".to_string())));
         binds
     },
-    <binds:binds> "inherit" "(" <expr:expr> ")" <attrs:attrs> ";" => {
-        Gc::allocate(mc, Expr::Select { expr, attr_path });
+    <binds:binds> "inherit" "(" <expr:expr> ")" <attr_path:attrs> ";" => {
+        // Gc::allocate(mc, Expr::Select { expr, attr_path });
+        binds // TODO select from subexpression created above
     },
     => HashMap::new(),
 }
@@ -252,17 +246,20 @@ attrpath: Vec<GcExpr<'gc>> = {
         attr_path.push(string_attr);
         attr_path
     },
-    attr => { vec![<>] },
+    <attr:attr> => { attr },
     string_attr => { vec![<>] },
 }
 
-attr: Symbol = {
-  Id
+attr: GcExpr<'gc> = {
+    Id => Gc::allocate(mc, Expr::Var(<>)),
 }
 //   | OR_KW { $$ = "or"; } TODO I really don't understand where the or keyword is happening...
 
 string_attr: GcExpr<'gc> = {
-    "\"" <parts:string_parts> "\"" => { parts },
+    <parts:string_parts> => {
+        // I'm slightly confused about what can be used as a string_attr, (TODO)
+        Gc::allocate(mc, Expr::Var(parts))
+    },
     // TODO ${} access is a bit confusing, apparently the following is valid and used a lot:
     // let a.b.c = 1; in a.${"b"}
     // e.g. from lib/attrsets.nix:
@@ -276,7 +273,8 @@ expr_list: Vec<GcExpr<'gc>> = {
     => Vec::new(),
 }
 
-formals: (Vec<Symbol>, bool) = {
+// bool is for ellipsis
+formals: (Vec<GcExpr<'gc>>, bool) = {
     <formal:formal> "," <formals:formals> => {
         formals.0.push(formal); formals
     },
@@ -289,11 +287,11 @@ formals: (Vec<Symbol>, bool) = {
     },
 }
 
-formal: Symbol = {
+formal: GcExpr<'gc> = {
     Id => {
         Gc::allocate(mc, Expr::Formal(<>, None))
     },
     <id:Id> "?" <expr:expr> => {
-        Gc::allocate(mc, Expr::Formal(<>, Some(expr)))
+        Gc::allocate(mc, Expr::Formal(id, Some(expr)))
     },
 }

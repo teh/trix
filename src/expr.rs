@@ -13,6 +13,8 @@ pub enum Expr<'gc> {
     Float(f64),
     Bool(bool),
     Var(Symbol),
+
+    // TODO should probably keep `Formal` in a separate structure
     Formal(Symbol, Option<GcExpr<'gc>>),
     InheritedVar(Symbol),
     // TODO: what about expressions in the string?
@@ -48,12 +50,12 @@ pub enum Expr<'gc> {
     },
     Select {
         expr: GcExpr<'gc>,
-        attr_path: Vec<Symbol>,
+        attr_path: Vec<GcExpr<'gc>>,
     },
     SelectOr {
         expr: GcExpr<'gc>,
-        attr_path_left: Vec<Symbol>,
-        attr_path_right: Vec<Symbol>,
+        attr_path_left: Vec<GcExpr<'gc>>,
+        attr_path_right: Vec<GcExpr<'gc>>,
     },
     Pap {
         f: GcExpr<'gc>,
@@ -71,6 +73,12 @@ pub enum Expr<'gc> {
         name: &'gc str,
         left: GcExpr<'gc>,
         right: GcExpr<'gc>,
+    },
+    UnaryMinus {
+        expr: GcExpr<'gc>,
+    },
+    UnaryNot {
+        expr: GcExpr<'gc>,
     },
     Let {
         bindings: HashMap<String, GcExpr<'gc>>,
