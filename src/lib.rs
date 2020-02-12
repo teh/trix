@@ -217,7 +217,7 @@ mod tests {
                 root: Gc::allocate(
                     mc,
                     Expr::Thunk {
-                        t: Gc::allocate(mc, Expr::String("thunk")),
+                        t: Gc::allocate(mc, Expr::String("thunk".to_string())),
                     },
                 ),
                 stack: GcCell::allocate(mc, Vec::new()),

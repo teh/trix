@@ -5,6 +5,7 @@
 use crate::expr::{Cont, Env, Expr, GcEnv, GcExpr, GcStack, Symbol};
 use gc_arena::{rootless_arena, Gc, MutationContext};
 use std::str::FromStr;
+use std::collections::HashMap;
 
 grammar<'gc, 'cx>(mc: MutationContext<'gc, 'cx>);
 
@@ -212,17 +213,17 @@ string_parts: String = {
 
 binds: HashMap<String, GcExpr<'gc>> = {
     <binds:binds> <attr_path:attrpath> "=" <expr:expr> ";" => {
-            // TODO recursively populate maps if path, e.g. "a.b.c = 1;" should
-            // become { a = { b = { c = 1; }; }; };
-            binds.insert("testpath", expr);
-            binds
-        },
+        // TODO recursively populate maps if path, e.g. "a.b.c = 1;" should
+        // become { a = { b = { c = 1; }; }; };
+        binds.insert("testpath", expr);
+        binds
+    },
     <binds:binds> "inherit" <attrs:attrs> ";" => {
         // todo, this is basically "x = x;" but expr in parent env.
         binds.insert("inherit attrs", Gc::allocate(mc, Expr::InheritedVar("inherit attr")));
         binds
-    }
-    <binds:binds> "inherit" '(' <expr:expr> ')' <attrs:attrs> ';' => {
+    },
+    <binds:binds> "inherit" "(" <expr:expr> ")" <attrs:attrs> ";" => {
         Gc::allocate(mc, Expr::Select { expr, attr_path });
     },
     => HashMap::new(),
