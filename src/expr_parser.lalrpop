@@ -43,47 +43,89 @@ pub expr_function: GcExpr<'gc> = {
 pub expr_if: GcExpr<'gc> = {
     "if" <if_expr:expr> "then" <then_expr:expr> "else" <else_expr:expr> =>
         { Gc::allocate(mc, Expr::IfThenElse { if_expr, then_expr, else_expr }) },
-    expr_op,
+    expr_op_p13,
 }
 
-// TODO precedence of ! and -, lalrpop doens't have precedence rules
-// : '!' expr_op %prec NOT { $$ = new ExprOpNot($2); }
-// | '-' expr_op %prec NEGATE { $$ = new ExprApp(CUR_POS, new ExprApp(new ExprVar(data->symbols.create("__sub")), new ExprInt(0)), $2); }
-pub expr_op: GcExpr<'gc> = {
-    <left:expr_op> "==" <right:expr_op> =>
-        { Gc::allocate(mc, Expr::BinOp { name: "==",  left, right }) },
-    <left:expr_op> "!=" <right:expr_op> =>
-        { Gc::allocate(mc, Expr::BinOp { name: "!=",  left, right }) },
-    <left:expr_op> "<" <right:expr_op> =>
-        { Gc::allocate(mc, Expr::BinOp { name: "<",  left, right }) },
-    <left:expr_op> "<=" <right:expr_op> =>
-        { Gc::allocate(mc, Expr::BinOp { name: "<=",  left, right }) },
-    <left:expr_op> ">" <right:expr_op> =>
-        { Gc::allocate(mc, Expr::BinOp { name: ">",  left, right }) },
-    <left:expr_op> ">=" <right:expr_op> =>
-        { Gc::allocate(mc, Expr::BinOp { name: ">=",  left, right }) },
-    <left:expr_op> "&&" <right:expr_op> =>
-        { Gc::allocate(mc, Expr::BinOp { name: "&&",  left, right }) },
-    <left:expr_op> "||" <right:expr_op> =>
-        { Gc::allocate(mc, Expr::BinOp { name: "||",  left, right }) },
-    <left:expr_op> "->" <right:expr_op> =>
-        { Gc::allocate(mc, Expr::BinOp { name: "->",  left, right }) },
-    <left:expr_op> "//" <right:expr_op> =>
-        { Gc::allocate(mc, Expr::BinOp { name: "//",  left, right }) },
-    <left:expr_op> "?" <right:attrpath> =>
+
+// -----------------------------------------------------------------------
+
+pub expr_op_p1: GcExpr<'gc> = {
+    <left:expr_op_p1> "." <right:expr_simple> =>
+        { Gc::allocate(mc, Expr::Select { f: left,  args: vec![right] }) },
+}
+pub expr_op_p2: GcExpr<'gc> = {
+    <left:expr_op_p2> <right:expr_op_p1> =>
+        { Gc::allocate(mc, Expr::App { f: left,  args: vec![right] }) },
+}
+pub expr_op_p3: GcExpr<'gc> = {
+    "-" <right:expr_op_p2> =>
+        { Gc::allocate(mc, Expr::BinOp { name: "negate",  right, right }) },
+}
+pub expr_op_p4: GcExpr<'gc> = {
+    <left:expr_op_p4> "?" <right:expr_op_p3> =>
         { Gc::allocate(mc, Expr::BinOp { name: "?",  left, right }) },
-    <left:expr_op> "+" <right:expr_op> =>
-        { Gc::allocate(mc, Expr::BinOp { name: "+",  left, right }) },
-    <left:expr_op> "-" <right:expr_op> =>
-        { Gc::allocate(mc, Expr::BinOp { name: "-",  left, right }) },
-    <left:expr_op> "*" <right:expr_op> =>
-        { Gc::allocate(mc, Expr::BinOp { name: "*",  left, right }) },
-    <left:expr_op> "/" <right:expr_op> =>
-        { Gc::allocate(mc, Expr::BinOp { name: "/",  left, right }) },
-    <left:expr_op> "++" <right:expr_op> =>
+}
+pub expr_op_p5: GcExpr<'gc> = {
+    <left:expr_op_p5> "++" <right:expr_op_p4> =>
         { Gc::allocate(mc, Expr::BinOp { name: "++",  left, right }) },
-    expr_app,
-};
+}
+pub expr_op_p6: GcExpr<'gc> = {
+    <left:expr_op_p6> "*" <right:expr_op_p5> =>
+        { Gc::allocate(mc, Expr::BinOp { name: "*",  left, right }) },
+    <left:expr_op_p6> "/" <right:expr_op_p5> =>
+        { Gc::allocate(mc, Expr::BinOp { name: "/",  left, right }) },
+}
+pub expr_op_p7: GcExpr<'gc> = {
+    // <left:expr_op> "+" <right:expr_op> =>
+    //     { Gc::allocate(mc, Expr::BinOp { name: "string+",  left, right }) }, TODO string concat has higher precedence
+    <left:expr_op_p7> "+" <right:expr_op_p6> =>
+        { Gc::allocate(mc, Expr::BinOp { name: "+",  left, right }) },
+    <left:expr_op_p7> "-" <right:expr_op_p6> =>
+        { Gc::allocate(mc, Expr::BinOp { name: "-",  left, right }) },
+}
+pub expr_op_p8: GcExpr<'gc> = {
+    "!" <right:expr_op_p7> =>
+        { Gc::allocate(mc, Expr::BinOp { name: "!!",  right, right }) }, // TODO mono-op
+}
+pub expr_op_p9: GcExpr<'gc> = {
+    <left:expr_op_p9> "//" <right:expr_op_p8> =>
+        { Gc::allocate(mc, Expr::BinOp { name: "//",  left, right }) },
+}
+pub expr_op_p10: GcExpr<'gc> = {
+    <left:expr_op_p10> "<" <right:expr_op_p9> =>
+        { Gc::allocate(mc, Expr::BinOp { name: "<",  left, right }) },
+    <left:expr_op_p10> "<=" <right:expr_op_p9> =>
+        { Gc::allocate(mc, Expr::BinOp { name: "<=",  left, right }) },
+    <left:expr_op_p10> ">" <right:expr_op_p9> =>
+        { Gc::allocate(mc, Expr::BinOp { name: ">",  left, right }) },
+    <left:expr_op_p10> ">=" <right:expr_op_p9> =>
+        { Gc::allocate(mc, Expr::BinOp { name: ">=",  left, right }) },
+}
+pub expr_op_p11: GcExpr<'gc> = {
+    <left:expr_op_p11> "==" <right:expr_op_p10> =>
+        { Gc::allocate(mc, Expr::BinOp { name: "==",  left, right }) },
+    <left:expr_op_p11> "!=" <right:expr_op_p10> =>
+        { Gc::allocate(mc, Expr::BinOp { name: "!=",  left, right }) },
+}
+pub expr_op_p12: GcExpr<'gc> = {
+    <left:expr_op_p12> "&&" <right:expr_op_p11> =>
+        { Gc::allocate(mc, Expr::BinOp { name: "&&",  left, right }) },
+}
+pub expr_op_p13: GcExpr<'gc> = {
+    <left:expr_op_p13> "||" <right:expr_op_p12> =>
+        { Gc::allocate(mc, Expr::BinOp { name: "||",  left, right }) },
+}
+pub expr_op_p14: GcExpr<'gc> = {
+    <left:expr_op_p14> "->" <right:expr_op_p13> =>
+        { Gc::allocate(mc, Expr::BinOp { name: "->",  left, right }) },
+}
+// -----------------------------------------------------------------------
+
+// TODO list concat different to string concat ..
+// <left:expr_op> "?" <right:attrpath> =>
+    //     { Gc::allocate(mc, Expr::BinOp { name: "?",  left, right }) },
+
+
 
 pub expr_app: GcExpr<'gc> = {
     <f:expr_app> <args:expr_select> =>
@@ -116,7 +158,7 @@ expr_simple: GcExpr<'gc> = {
     r"[0-9]+" => {
         Gc::allocate(mc, Expr::Int(i64::from_str(<>).unwrap()))
     },
-    "\"" <parts:string_parts> "\"" => {
+    <parts:string_parts> => {
          Gc::allocate(mc, Expr::String(parts))
     },
     // "''" <parts:ind_string_parts> "''" => {
@@ -144,7 +186,7 @@ expr_simple: GcExpr<'gc> = {
 // TODO - string interpolation needs to mop up symbols until it hits "${"
 //
 string_parts: String = {
-    r#"[^"]"# => String::from(<>)
+    r#""[^"]*""# => String::from(<>)
 }
 //   : STR
 //   | string_parts_interpolated { $$ = new ExprConcatStrings(CUR_POS, true, $1); }
