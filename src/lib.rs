@@ -1,3 +1,4 @@
+#[allow(unused_imports)]
 use crate::expr::{Cont, Env, Expr, ExprArena, ExprRoot, GcEnv, GcExpr, GcStack};
 use gc_arena::{make_arena, ArenaParameters, Collect, Gc, GcCell, MutationContext};
 use std::cmp::Ordering;
@@ -227,13 +228,13 @@ mod tests {
             let mut s = (root.root, root.env);
             for i in 0..10 {
                 s = step(mc, s.0, s.1, black_hole, root.stack);
-                // match *s.0 {
-                //     Expr::String(s) => {
-                //         assert_eq!(s, "thunk");
-                //         break;
-                //     }
-                //     _ => (),
-                // }
+                match *(s.0) {
+                    Expr::String(ref s) => {
+                        assert_eq!(s, "thunk");
+                        break;
+                    }
+                    _ => (),
+                }
             }
         });
     }
