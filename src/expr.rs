@@ -22,7 +22,9 @@ pub enum Expr<'gc> {
     Path(String),
     List(Vec<GcExpr<'gc>>),
     Attrs {
-        attrs: HashMap<String, GcExpr<'gc>>,
+        // unfortunately left-side attributes can be dynamic, e.g.
+        // let xx = "xx"; in { ${xx} = 2; } is totally valid.
+        attrs: Vec<(Vec<GcExpr<'gc>>, GcExpr<'gc>)>,
         recursive: bool,
     },
     Assert {
@@ -75,6 +77,10 @@ pub enum Expr<'gc> {
         left: GcExpr<'gc>,
         right: GcExpr<'gc>,
     },
+    HasAttr { // specialized primop, might not need, to be decided later
+        expr: GcExpr<'gc>,
+        attr_path: Vec<GcExpr<'gc>>,
+    },
     UnaryMinus {
         expr: GcExpr<'gc>,
     },
@@ -82,7 +88,8 @@ pub enum Expr<'gc> {
         expr: GcExpr<'gc>,
     },
     Let {
-        bindings: HashMap<String, GcExpr<'gc>>,
+        // let is the only place where dynamic attributes are disallowed
+        bindings: Vec<(Vec<GcExpr<'gc>>, GcExpr<'gc>)>,
         // inherited: HashMap<String, GcExpr<'gc>>,    // inherit always inherits from parent env
         body: GcExpr<'gc>,                          // let ...; in body
     },

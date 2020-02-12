@@ -5,7 +5,7 @@
 use crate::expr::{Expr, GcExpr, Symbol};
 use gc_arena::{Gc, MutationContext};
 use std::str::FromStr;
-use std::collections::HashMap;
+
 
 grammar<'gc, 'cx>(mc: MutationContext<'gc, 'cx>);
 
@@ -21,23 +21,57 @@ Path: String = {
     r"[a-zA-Z0-9\\._\-\+]*(/[a-zA-Z0-9\\._\-\+]+)+/?" => String::from(<>)
 }
 
-pub expr: GcExpr<'gc> = { expr_function };
+pub expr: GcExpr<'gc> = { lambda_def };
+
+
+pub lambda_def: GcExpr<'gc> = {
+    <arg:Id> ":" <body:expr_function> => {
+         Gc::allocate(mc, Expr::Lambda { arg: Some(arg), body, formals: (vec![], false) }) },
+    // "{" <formals:formal+> "}" ":" <body:expr_function> => {
+    //      Gc::allocate(mc, Expr::Lambda { arg: None, formals, body }) },
+    // "{" <formals:formal+> "}" "@" <arg:Id> ":" <body:expr_function> => {
+    //      Gc::allocate(mc, Expr::Lambda { arg: Some(arg), formals, body }) },
+    <arg:Id> "@" "{" <formals:formals> "}" ":" <body:expr_function> => {
+        // TODO handle ... or move the @ handling down
+        Gc::allocate(mc, Expr::Lambda { arg: Some(arg), formals: (formals, false), body }) },
+    "{" <formals_or_binds:formals_or_binds> => { formals_or_binds },
+    expr_function,
+}
+
+// "{" starting both functions and attr sets, each with different precedences,
+// is a real pain for shift-reduce conflicts. We need to prefix-match as
+// described here: http://smallcultfollowing.com/babysteps/blog/2016/03/02/nice-errors-in-lalrpop/
+
+// Things can get quite wild:
+// (({ a, b ? {}: 1 }: b){ a = 10; }){}
+pub formals_or_binds: GcExpr<'gc> = {
+    "}"  ":" <body:expr_function> => {
+        Gc::allocate(mc, Expr::Lambda { arg: None, formals: (vec![], false), body })
+    },
+    "..." "}"  ":" <body:expr_function> => {
+        Gc::allocate(mc, Expr::Lambda { arg: None, formals: (vec![], true), body })
+    },
+    <formals:formals> "}"  ":" <body:expr_function> => {
+        Gc::allocate(mc, Expr::Lambda { arg: None, formals: (formals, false), body })
+    },
+    <formals:formals> "," "..." "}"  ":" <body:expr_function> => {
+        Gc::allocate(mc, Expr::Lambda { arg: None, formals: (formals, true), body })
+    },
+    "}" => {
+        Gc::allocate(mc, Expr::Attrs { recursive: false, attrs: Vec::new() })
+    },
+    <attrs:binds> "}" => {
+        Gc::allocate(mc, Expr::Attrs { recursive: false, attrs })
+    },
+}
 
 pub expr_function: GcExpr<'gc> = {
-    <arg:Id> ":" <body:expr_function> =>
-        { Gc::allocate(mc, Expr::Lambda { arg: Some(arg), body, formals: (vec![], false) }) },
-    "{" <formals:formals> "}" ":" <body:expr_function> =>
-        { Gc::allocate(mc, Expr::Lambda { arg: None, formals, body }) },
-    "{" <formals:formals> "}" "@" <arg:Id> ":" <body:expr_function> =>
-        { Gc::allocate(mc, Expr::Lambda { arg: Some(arg), formals, body }) },
-    <arg:Id> "@" "{" <formals:formals> "}" ":" <body:expr_function> =>
-        { Gc::allocate(mc, Expr::Lambda { arg: Some(arg), formals, body }) },
-    "assert" <expr:expr> ";" <body:expr_function> =>
-        { Gc::allocate(mc, Expr::Assert { expr, body }) },
-    "with" <expr:expr> ";" <body:expr_function> =>
-        { Gc::allocate(mc, Expr::With { expr, body }) },
-    "let" <bindings:binds> "in" <body:expr_function> =>
-        { Gc::allocate(mc, Expr::Let { bindings, body }) },
+    "assert" <expr:expr> ";" <body:expr_function> => {
+         Gc::allocate(mc, Expr::Assert { expr, body }) },
+    "with" <expr:expr> ";" <body:expr_function> => {
+         Gc::allocate(mc, Expr::With { expr, body }) },
+    "let" <bindings:binds> "in" <body:expr_function> => {
+         Gc::allocate(mc, Expr::Let { bindings, body }) },
     expr_if,
 };
 
@@ -66,8 +100,8 @@ pub expr_op_p3: GcExpr<'gc> = {
     expr_op_p2
 }
 pub expr_op_p4: GcExpr<'gc> = {
-    <left:expr_op_p4> "?" <right:expr_op_p3> =>
-        { Gc::allocate(mc, Expr::BinaryOp { name: "?",  left, right }) },
+    <expr:expr_op_p4> "?" <attr_path:attrpath> =>
+        { Gc::allocate(mc, Expr::HasAttr { expr, attr_path }) },
     expr_op_p3
 }
 pub expr_op_p5: GcExpr<'gc> = {
@@ -183,9 +217,10 @@ expr_simple: GcExpr<'gc> = {
     "rec" "{" <attrs:binds> "}" => {
         Gc::allocate(mc, Expr::Attrs { recursive: true, attrs })
     }, // replace attrs?
-    "{" <attrs:binds> "}" => {
-        Gc::allocate(mc, Expr::Attrs { recursive: false, attrs })
-    },
+
+    // "{" <attrs:binds> "}" => {
+    //     Gc::allocate(mc, Expr::Attrs { recursive: false, attrs })
+    // },
     "[" <list:expr_list> "]" => {
         Gc::allocate(mc, Expr::List(list))
     },
@@ -218,23 +253,31 @@ string_parts: String = {
 //   | { $$ = new vector<Expr *>; }
 //   ;
 
-binds: HashMap<String, GcExpr<'gc>> = {
-    <mut binds:binds> <attr_path:attrpath> "=" <expr:expr> ";" => {
-        // TODO recursively populate maps if path, e.g. "a.b.c = 1;" should
-        // become { a = { b = { c = 1; }; }; };
-        binds.insert("testpath".to_string(), expr);
+binds: Vec<(Vec<GcExpr<'gc>>, GcExpr<'gc>)> = {
+    <bind:bind> => {
+        vec![bind]
+    },
+    <mut binds:binds> <bind:bind> => {
+        binds.push(bind);
         binds
     },
-    <mut binds:binds> "inherit" <attrs:attrs> ";" => {
-        // todo, this is basically "x = x;" but expr in parent env.
-        binds.insert("inherit attrs".to_string(), Gc::allocate(mc, Expr::InheritedVar("inherit attr".to_string())));
-        binds
-    },
-    <mut binds:binds> "inherit" "(" <expr:expr> ")" <attr_path:attrs> ";" => {
-        // Gc::allocate(mc, Expr::Select { expr, attr_path });
-        binds // TODO select from subexpression created above
-    },
-    => HashMap::new(),
+    // <mut binds:binds> "inherit" <attrs:attrs> ";" => {
+    //     // todo, this is basically "x = x;" but expr in parent env.
+    //     binds.insert("inherit attrs".to_string(), Gc::allocate(mc, Expr::InheritedVar("inherit attr".to_string())));
+    // },
+    //     binds
+    // <mut binds:binds> "inherit" "(" <expr:expr> ")" <attr_path:attrs> ";" => {
+    //     // Gc::allocate(mc, Expr::Select { expr, attr_path });
+    //     binds // TODO select from subexpression created above
+    // },
+    // => HashMap::new(),
+}
+
+bind: (Vec<GcExpr<'gc>>, GcExpr<'gc>) = {
+    // TODO - inherit handling
+    <attr_path:attrpath> "=" <expr:expr> ";" => {
+        (attr_path, expr)
+    }
 }
 
 attrs: Vec<GcExpr<'gc>> = {
@@ -287,17 +330,12 @@ expr_list: Vec<GcExpr<'gc>> = {
     => Vec::new(),
 }
 
-// bool is for ellipsis
-formals: (Vec<GcExpr<'gc>>, bool) = {
-    <formal:formal> "," <mut formals:formals> => {
-        formals.0.push(formal); formals
-    },
+formals: Vec<GcExpr<'gc>> = {
     <formal:formal> => {
-        (vec![formal], false)
+        vec![formal]
     },
-    => (Vec::new(), false),
-    "..." => {
-        (Vec::new(), true)
+    <mut formals:formals> "," <formal:formal> => {
+        formals.push(formal); formals
     },
 }
 
