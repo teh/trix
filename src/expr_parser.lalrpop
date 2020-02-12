@@ -2,13 +2,255 @@
 // building the AST using gc-arena allocations. This makes the AST immediately
 // usable for interpretation. I'm not sure it's a great decision to conflate the
 // two so early, but it's a decision.
-use crate::expr::{Cont, Env, Expr, GcEnv, GcExpr, GcStack};
+use crate::expr::{Cont, Env, Expr, GcEnv, GcExpr, GcStack, Symbol};
 use gc_arena::{rootless_arena, Gc, MutationContext};
 use std::str::FromStr;
 
 grammar<'gc, 'cx>(mc: MutationContext<'gc, 'cx>);
 
+pub Id: String = {
+    r"[a-zA-Z_][a-zA-Z0-_'\\-]*" => Symbol::from(<>)
+}
+
 pub Int: GcExpr<'gc> = {
-    r"[0-9]+" => Gc::allocate(mc, Expr::Int(i64::from_str(<>).unwrap())),
+    r"[0-9]+" => Gc::allocate(mc, Expr::Int(i64::from_str(<>).unwrap()))
 };
 
+Path: String = {
+    r"[a-zA-Z0-9\\._\-\+]*(/[a-zA-Z0-9\\._\-\+]+)+/?" => String::from(<>)
+}
+
+pub expr: GcExpr<'gc> = { expr_function };
+
+pub expr_function: GcExpr<'gc> = {
+    <arg:Id> ":" <body:expr_function> =>
+        { Gc::allocate(mc, Expr::Lambda { arg: Some(arg), body, formals: vec![] }) },
+    "{" <formals:formals> "}" ":" <body:expr_function> =>
+        { Gc::allocate(mc, Expr::Lambda { arg: None, formals: formals, body }) },
+    "{" <formals:formals> "}" "@" <arg:Id> ":" <body:expr_function> =>
+        { Gc::allocate(mc, Expr::Lambda { arg: Some(arg), formals: formals, body }) },
+    <arg:Id> "@" "{" <formals:formals> "}" ":" <body:expr_function> =>
+        { Gc::allocate(mc, Expr::Lambda { arg: Some(arg), formals: formals, body }) },
+    "assert" <expr:expr> ";" <body:expr_function> =>
+        { Gc::allocate(mc, Expr::Assert { expr, body }) },
+    "with" <expr:expr> ";" <body:expr_function> =>
+        { Gc::allocate(mc, Expr::With { expr, body }) },
+    "let" <bindings:binds> "in" <body:expr_function> =>
+        { Gc::allocate(mc, Expr::Let { bindings, body }) },
+    expr_if,
+};
+
+pub expr_if: GcExpr<'gc> = {
+    "if" <if_expr:expr> "then" <then_expr:expr> "else" <else_expr:expr> =>
+        { Gc::allocate(mc, Expr::IfThenElse { if_expr, then_expr, else_expr }) },
+    expr_op,
+}
+
+// TODO precedence of ! and -, lalrpop doens't have precedence rules
+// : '!' expr_op %prec NOT { $$ = new ExprOpNot($2); }
+// | '-' expr_op %prec NEGATE { $$ = new ExprApp(CUR_POS, new ExprApp(new ExprVar(data->symbols.create("__sub")), new ExprInt(0)), $2); }
+pub expr_op: GcExpr<'gc> = {
+    <left:expr_op> "==" <right:expr_op> =>
+        { Gc::allocate(mc, Expr::BinOp { name: "==",  left, right }) },
+    <left:expr_op> "!=" <right:expr_op> =>
+        { Gc::allocate(mc, Expr::BinOp { name: "!=",  left, right }) },
+    <left:expr_op> "<" <right:expr_op> =>
+        { Gc::allocate(mc, Expr::BinOp { name: "<",  left, right }) },
+    <left:expr_op> "<=" <right:expr_op> =>
+        { Gc::allocate(mc, Expr::BinOp { name: "<=",  left, right }) },
+    <left:expr_op> ">" <right:expr_op> =>
+        { Gc::allocate(mc, Expr::BinOp { name: ">",  left, right }) },
+    <left:expr_op> ">=" <right:expr_op> =>
+        { Gc::allocate(mc, Expr::BinOp { name: ">=",  left, right }) },
+    <left:expr_op> "&&" <right:expr_op> =>
+        { Gc::allocate(mc, Expr::BinOp { name: "&&",  left, right }) },
+    <left:expr_op> "||" <right:expr_op> =>
+        { Gc::allocate(mc, Expr::BinOp { name: "||",  left, right }) },
+    <left:expr_op> "->" <right:expr_op> =>
+        { Gc::allocate(mc, Expr::BinOp { name: "->",  left, right }) },
+    <left:expr_op> "//" <right:expr_op> =>
+        { Gc::allocate(mc, Expr::BinOp { name: "//",  left, right }) },
+    <left:expr_op> "?" <right:attrpath> =>
+        { Gc::allocate(mc, Expr::BinOp { name: "?",  left, right }) },
+    <left:expr_op> "+" <right:expr_op> =>
+        { Gc::allocate(mc, Expr::BinOp { name: "+",  left, right }) },
+    <left:expr_op> "-" <right:expr_op> =>
+        { Gc::allocate(mc, Expr::BinOp { name: "-",  left, right }) },
+    <left:expr_op> "*" <right:expr_op> =>
+        { Gc::allocate(mc, Expr::BinOp { name: "*",  left, right }) },
+    <left:expr_op> "/" <right:expr_op> =>
+        { Gc::allocate(mc, Expr::BinOp { name: "/",  left, right }) },
+    <left:expr_op> "++" <right:expr_op> =>
+        { Gc::allocate(mc, Expr::BinOp { name: "++",  left, right }) },
+    expr_app,
+};
+
+pub expr_app: GcExpr<'gc> = {
+    <f:expr_app> <args:expr_select> =>
+        // TODO - in the current setup application is always arity 1, we can
+        // probably mop higher arities for some expressions (e.g. `map f [1 2 3]`)
+        { Gc::allocate(mc, Expr::App { f, arity: 1, args }) },
+    expr_select,  // { $$ = $1; } TODO <- what does the thing on the left do?
+}
+
+expr_select: GcExpr<'gc> = {
+    <expr:expr_simple> "." <attrpath:attrpath> =>
+        { Gc::allocate(mc, Expr::Select { expr, attrpath }) },
+    // { a = "a"; }.b or "b" - I had no idea ..
+    <expr:expr_simple> "." <attrpath_left:attrpath> "or" <attrpath_right:attrpath> =>
+        { Gc::allocate(mc, Expr::SelectOr { expr, attrpath_left, attrpath_right }) },
+    // | /* Backwards compatibility: because Nixpkgs has a rarely used
+    //    function named ‘or’, allow stuff like ‘map or [...]’. */
+    // expr_simple OR_KW
+    // { $$ = new ExprApp(CUR_POS, $1, new ExprVar(CUR_POS, data->symbols.create("or"))); }
+    expr_simple
+}
+
+// TODO what is HPATH and SPATH?
+// TODO do we want to keep URIs?
+// TODO floats
+expr_simple: GcExpr<'gc> = {
+    <id:Id> => {
+        Gc::allocate(mc, Expr::Var(id))
+    },
+    r"[0-9]+" => {
+        Gc::allocate(mc, Expr::Int(i64::from_str(<>).unwrap()))
+    },
+    "\"" <parts:string_parts> "\"" => {
+         Gc::allocate(mc, Expr::String(parts))
+    },
+    // "''" <parts:ind_string_parts> "''" => {
+    //     Gc::allocate(mc, Expr::String(parts))
+    // }, // TODO strip indendtation
+    <path:Path> => {
+        Gc::allocate(mc, Expr::Path(path))
+    },
+    "(" <expr:expr> ")" => {
+        expr
+    },
+    // TODO - let body doesn't seem to happen at all in <nixpkgs>?
+    // Let expressions `let {..., body = ...}" are just desugared
+    // into `(rec {..., body = ...}).body".
+    // "let" "{" <expr:binds> "}" =>
+    //     { // TODO make binds recursive here? Seems to me they should always return recursive?
+    //         Gc::allocate(mc, Expr::Select(expr, attr_path: Symbol("body")) }
+    "rec" "{" <bindings:binds> "}" => {
+        Gc::allocate(mc, Expr::Attrs{ recursive: true, attrs: bindings.attrs })
+    }, // replace attrs?
+    "{" <bindings:binds> "}" => { attrs },
+    "[" <list:expr_list> "]" => { list },
+}
+
+// TODO - string interpolation needs to mop up symbols until it hits "${"
+//
+string_parts: String = {
+    r#"[^"]"# => String::from(<>)
+}
+//   : STR
+//   | string_parts_interpolated { $$ = new ExprConcatStrings(CUR_POS, true, $1); }
+//   | { $$ = new ExprString(data->symbols.create("")); }
+//   ;
+
+// string_parts_interpolated
+//   : string_parts_interpolated STR { $$ = $1; $1->push_back($2); }
+//   | string_parts_interpolated "${" expr "}" { $$ = $1; $1->push_back($3); }
+//   | "${" expr "}" { $$ = new vector<Expr *>; $$->push_back($2); }
+//   | STR "${" expr "}" {
+//       $$ = new vector<Expr *>;
+//       $$->push_back($1);
+//       $$->push_back($3);
+//     }
+//   ;
+
+// ind_string_parts
+//   : ind_string_parts IND_STR { $$ = $1; $1->push_back($2); }
+//   | ind_string_parts "${" expr "}" { $$ = $1; $1->push_back($3); }
+//   | { $$ = new vector<Expr *>; }
+//   ;
+
+binds: HashMap<String, GcExpr<'gc>> = {
+    <binds:binds> <attr_path:attrpath> "=" <expr:expr> ";" => {
+            // TODO recursively populate maps if path, e.g. "a.b.c = 1;" should
+            // become { a = { b = { c = 1; }; }; };
+            binds.insert("testpath", expr);
+            binds
+        },
+    <binds:binds> "inherit" <attrs:attrs> ";" => {
+        // todo, this is basically "x = x;" but expr in parent env.
+        binds.insert("inherit attrs", Gc::allocate(mc, Expr::InheritedVar("inherit attr")));
+        binds
+    }
+    <binds:binds> "inherit" '(' <expr:expr> ')' <attrs:attrs> ';' => {
+        Gc::allocate(mc, Expr::Select { expr, attr_path });
+    },
+    => HashMap::new(),
+}
+
+attrs: Vec<GcExpr<'gc>> = {
+    <list:attrs> <attr:attr> => {
+        list.push(attr);
+        list
+    },
+   <list:attrs> <attr:string_attr> => {
+       // TODO check string attr is not "dynamic", i.e. doens't
+       // have an expression like "${}" in the string.
+       list.push(attr);
+       list
+   },
+   => Vec::new(),
+}
+
+attrpath: Vec<GcExpr<'gc>> = {
+    <attr_path:attrpath> "." <attr:attr> => {
+        attr_path.push(attr);
+        attr_path
+    },
+    <attr_path:attrpath> "." <string_attr:string_attr> => {
+        attr_path.push(string_attr);
+        attr_path
+    },
+    attr => { vec![<>] },
+    string_attr => { vec![<>] },
+}
+
+attr: Symbol = {
+  Id
+}
+//   | OR_KW { $$ = "or"; } TODO I really don't understand where the or keyword is happening...
+
+string_attr: GcExpr<'gc> = {
+    "\"" <parts:string_parts> "\"" => { parts },
+    // TODO ${} access is a bit confusing, apparently the following is valid and used a lot:
+    // let a.b.c = 1; in a.${"b"}
+    // e.g. from lib/attrsets.nix:
+    // attrVals = nameList: set: map (x: set.${x}) nameList;
+    "${" <expr:expr> "}" => { expr },
+}
+
+expr_list: Vec<GcExpr<'gc>> = {
+    <list:expr_list> <select:expr_select> =>
+        { list.push(select); list },
+    => Vec::new(),
+}
+
+formals: (Vec<Symbol>, bool) = {
+    <formal:formal> "," <formals:formals> => {
+        formals.0.push(formal); formals
+    },
+    <formal:formal> => {
+        (vec![formal], false)
+    },
+    => (Vec::new(), false),
+    "..." => {
+        (Vec::new(), true)
+    },
+}
+
+formal: Symbol = {
+    Id => {
+        Gc::allocate(mc, Expr::Formal(<>, None))
+    },
+    <id:Id> "?" <expr:expr> => {
+        Gc::allocate(mc, Expr::Formal(<>, Some(expr)))
+    },
+}

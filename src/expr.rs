@@ -1,6 +1,9 @@
 use gc_arena::{make_arena, ArenaParameters, Collect, Gc, GcCell, MutationContext};
 use std::collections::HashMap;
 
+/// Placeholder for e.g. argument names in lambdas (x, y, i)
+pub type Symbol = String;
+
 #[derive(Debug, Clone, Collect)]
 #[collect(no_drop)]
 ///
@@ -9,18 +12,48 @@ pub enum Expr<'gc> {
     Int(i64),
     Float(f64),
     Bool(bool),
+    Var(Symbol),
+    Formal(Symbol, Option<GcExpr<'gc>>),
+    InheritedVar(Symbol),
     // TODO: what about expressions in the string?
-    String(&'gc str),
-    Path(&'gc str),
+    String(String),
+    Path(String),
     List(Vec<GcExpr<'gc>>),
-    Attrs(HashMap<String, GcExpr<'gc>>),
+    Attrs {
+        attrs: HashMap<String, GcExpr<'gc>>,
+        recursive: bool,
+    },
+    Assert {
+        expr: GcExpr<'gc>,
+        body: GcExpr<'gc>,
+    },
+    With {
+        expr: GcExpr<'gc>,
+        body: GcExpr<'gc>,
+    },
+    IfThenElse {
+        if_expr: GcExpr<'gc>,
+        then_expr: GcExpr<'gc>,
+        else_expr: GcExpr<'gc>,
+    },
     Lambda {
-        e: GcExpr<'gc>,
+        arg: Option<Symbol>,
+        body: GcExpr<'gc>,
+        formals: Vec<GcExpr<'gc>>,
     },
     App {
         f: GcExpr<'gc>,
         args: Vec<GcExpr<'gc>>,
         arity: usize,
+    },
+    Select {
+        expr: GcExpr<'gc>,
+        attr_path: Vec<Symbol>,
+    },
+    SelectOr {
+        expr: GcExpr<'gc>,
+        attr_path_left: Vec<Symbol>,
+        attr_path_right: Vec<Symbol>,
     },
     Pap {
         f: GcExpr<'gc>,
@@ -34,6 +67,11 @@ pub enum Expr<'gc> {
         name: &'gc str,
         arity: usize,
     },
+    BinaryOp { // specialized primop, might not need, to be decided later
+        name: &'gc str,
+        left: GcExpr<'gc>,
+        right: GcExpr<'gc>,
+    },
     Let {
         bindings: HashMap<String, GcExpr<'gc>>,
         rec_bindings: HashMap<String, GcExpr<'gc>>, // TODO replace with either-like struct
@@ -44,7 +82,7 @@ pub enum Expr<'gc> {
 
 impl<'gc> PartialEq for Expr<'gc> {
     fn eq(&self, other: &Self) -> bool {
-        match (self, other)  {
+        match (self, other) {
             (Expr::Int(s), Expr::Int(o)) => s == o,
             _ => unimplemented!("cannot eq-compare {:?} with {:?} yet", self, other),
         }
