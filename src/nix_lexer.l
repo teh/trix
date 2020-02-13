@@ -57,6 +57,7 @@ pub enum Token {
 
 #[derive(Clone, Debug)]
 pub enum LexState<'a> {
+    NormalInString,
     String(usize, std::str::Chars<'a>),
     IndString,
 }
@@ -120,10 +121,18 @@ inherit         return Ok(Token::INHERIT);
 "["             return Ok(Token::OPEN_SQUARE);
 "]"             return Ok(Token::CLOSE_SQUARE);
 "{"             return Ok(Token::OPEN_CURLY);
-"}"             return Ok(Token::CLOSE_CURLY);
+"}" {
 
-<STRING>([^\"])*  {}
-<STRING>"\"" { return Ok(Token::STRING_PART(self.yystring()?)); }
+        return Ok(Token::CLOSE_CURLY);
+    }
+
+<STRING>([^\"$\\]|\$[^\"{\\]|\\.\n)* {}
+<STRING>"\"" { return Ok(Token::STRING_PART(self.yystring(1)?)); }
+<STRING>"${" {
+        self.state_stack.push(LexState::NormalInString);
+        self.yybegin(Lexer::YYINITIAL);
+    }
+
 " "    /* Skip white space. This comment cannot be omitted. TODO - check state*/
 %%
 
