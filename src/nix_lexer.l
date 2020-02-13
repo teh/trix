@@ -123,7 +123,7 @@ inherit         return Ok(Token::INHERIT);
 "}"             return Ok(Token::CLOSE_CURLY);
 
 <STRING>([^\"])*  {}
-<STRING>"\"" { let s = self.yystring(1)?; return Ok(Token::STRING_PART(s)); }
+<STRING>"\"" { return Ok(Token::STRING_PART(self.yystring()?)); }
 " "    /* Skip white space. This comment cannot be omitted. TODO - check state*/
 %%
 
