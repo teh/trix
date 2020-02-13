@@ -356,7 +356,6 @@ extern {
         ":" => Token::COLON,
         ";" => Token::SEMICOLON,
         "?" => Token::QUESTIONMARK,
-        "//" => Token::DOUBLE_FORWARD_SLASH,
 
         "@" => Token::AT,
 

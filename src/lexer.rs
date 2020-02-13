@@ -36,6 +36,15 @@ mod tests {
     fn check_simple_lex() {
         let mut lexer = Lexer::new("1", Vec::new(), 0);
         assert_eq!(lexer.yylex().unwrap(), Token::INT(1));
-        println!("{:?}", lexer.yylex());
+
+        let mut lexer = Lexer::new("some_id", Vec::new(), 0);
+        assert_eq!(lexer.yylex().unwrap(), Token::ID("some_id".to_string()));
+
+        let mut lexer = Lexer::new("//", Vec::new(), 0);
+        assert_eq!(lexer.yylex().unwrap(), Token::UPDATE);
+
+        let mut lexer = Lexer::new("./path", Vec::new(), 0);
+        assert_eq!(lexer.yylex().unwrap(), Token::PATH("./path".to_string()));
+
     }
 }
