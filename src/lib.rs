@@ -3,7 +3,6 @@ use crate::expr::{Cont, Env, Expr, ExprArena, ExprRoot, GcEnv, GcExpr, GcStack};
 use gc_arena::{make_arena, ArenaParameters, Collect, Gc, GcCell, MutationContext};
 use std::cmp::Ordering;
 #[macro_use] extern crate lalrpop_util;
-#[macro_use] extern crate lazy_static;
 
 
 pub mod expr;
@@ -241,14 +240,5 @@ mod tests {
                 }
             }
         });
-    }
-
-    #[test]
-    fn check_parsed() {
-        rootless_arena(|mc| {
-            let a = exprParser::new().parse(mc, "1").unwrap();
-            let b = exprParser::new().parse(mc, "1").unwrap();
-            assert_eq!(*a, *b);
-        })
     }
 }

@@ -6,6 +6,7 @@ use crate::expr::{Expr, GcExpr, Symbol};
 use gc_arena::{Gc, MutationContext};
 use std::str::FromStr;
 use crate::lexer;
+use crate::lexer::nix_lexer::{Token, Lexer};
 
 grammar<'gc, 'cx>(mc: MutationContext<'gc, 'cx>);
 
@@ -166,7 +167,7 @@ expr_simple: GcExpr<'gc> = {
     <id:ID> => {
         Gc::allocate(mc, Expr::Var(id))
     },
-    <int:INT> => { int },
+    <int:INT> => { Gc::allocate(mc, Expr::Int(int)) },
     <parts:string_parts> => {
          Gc::allocate(mc, Expr::String(parts))
     },
@@ -202,10 +203,10 @@ expr_simple: GcExpr<'gc> = {
 // contents: &str = r#"([^\$"\\]|\$[^\{"\\])*"#;
 
 string_parts: String = {
-    // "\"" <s:contents> "\"" => s.to_string(),
-    // "\"" <s:contents> "${" => s.to_string(),
-    // <s:INTERP_STRING> <expr:expr> CLOSE_INTERP_STRING => format!("I,{},{:?},I", s, expr), //expr CLOSE_INTERP_STRING => s.to_string(),
-    // <s:NORMAL_STRING> => s.to_string(),
+    // "\"" <s:contents> "\"" => s,
+    // "\"" <s:contents> "${" => s,
+    // <s:INTERP_STRING> <expr:expr> CLOSE_INTERP_STRING => format!("I,{},{:?},I", s, expr), //expr CLOSE_INTERP_STRING => s,
+    // <s:NORMAL_STRING> => s,
 }
 //   : STR
 //   | string_parts_interpolated { $$ = new ExprConcatStrings(CUR_POS, true, $1); }
@@ -239,7 +240,7 @@ binds: Vec<(Vec<GcExpr<'gc>>, GcExpr<'gc>)> = {
     },
     // <mut binds:binds> "inherit" <attrs:attrs> ";" => {
     //     // todo, this is basically "x = x;" but expr in parent env.
-    //     binds.insert("inherit attrs".to_string(), Gc::allocate(mc, Expr::InheritedVar("inherit attr".to_string())));
+    //     binds.insert("inherit attrs", Gc::allocate(mc, Expr::InheritedVar("inherit attr")));
     // },
     //     binds
     // <mut binds:binds> "inherit" "(" <expr:expr> ")" <attr_path:attrs> ";" => {
@@ -284,7 +285,7 @@ attrpath: Vec<GcExpr<'gc>> = {
 }
 
 attr: GcExpr<'gc> = {
-    ID => Gc::allocate(mc, Expr::Var(<>)),
+    <id:ID> => Gc::allocate(mc, Expr::Var(id)),
 }
 //   | OR_KW { $$ = "or"; } TODO I really don't understand where the or keyword is happening...
 
@@ -316,8 +317,8 @@ formals: Vec<GcExpr<'gc>> = {
 }
 
 formal: GcExpr<'gc> = {
-    ID => {
-        Gc::allocate(mc, Expr::Formal(<>, None))
+    <id:ID> => {
+        Gc::allocate(mc, Expr::Formal(id, None))
     },
     <id:ID> "?" <expr:expr> => {
         Gc::allocate(mc, Expr::Formal(id, Some(expr)))
@@ -328,63 +329,63 @@ extern {
     type Location = usize;
     type Error = lexer::LexicalError;
 
-    enum lexer::Tok {
-        ID => lexer::Tok::ID,
-        ","  => lexer::Tok::COMMA,
-        INT => lexer::Tok::INT,
-        FLOAT =>lexer::Tok::FLOAT,
-        STRING_START => lexer::Tok::STRING_START,
-        "${" => lexer::Tok::DOLLAR_CURLY,
+    enum Token {
+        ID => Token::ID(<String>),
+        INT => Token::INT(<i64>),
+        FLOAT =>Token::FLOAT(<String>),
+        PATH => Token::PATH(<String>),
+        STRING_START => Token::STRING_START,
 
-        "if" => lexer::Tok::IF,
-        "then" => lexer::Tok::THEN,
-        "else" => lexer::Tok::ELSE,
-        "assert" => lexer::Tok::ASSERT,
-        "with" => lexer::Tok::WITH,
-        "let" => lexer::Tok::LET,
-        "in" => lexer::Tok::IN,
-        "rec" => lexer::Tok::REC,
-        "inherit" => lexer::Tok::INHERIT,
-        OR_KW => lexer::Tok::OR_KW,
-        "..." => lexer::Tok::ELLIPSIS,
+        OR_KW => Token::OR_KW,
+        ","  => Token::COMMA,
+        "${" => Token::DOLLAR_CURLY,
 
-        "," => lexer::Tok::COMMA,
-        "." => lexer::Tok::DOT,
-        ":" => lexer::Tok::COLON,
-        ";" => lexer::Tok::SEMICOLON,
-        "?" => lexer::Tok::QUESTIONMARK,
-        "//" => lexer::Tok::DOUBLE_FORWARD_SLASH,
+        "if" => Token::IF,
+        "then" => Token::THEN,
+        "else" => Token::ELSE,
+        "assert" => Token::ASSERT,
+        "with" => Token::WITH,
+        "let" => Token::LET,
+        "in" => Token::IN,
+        "rec" => Token::REC,
+        "inherit" => Token::INHERIT,
+        "..." => Token::ELLIPSIS,
 
-        "@" => lexer::Tok::AT,
+        "," => Token::COMMA,
+        "." => Token::DOT,
+        ":" => Token::COLON,
+        ";" => Token::SEMICOLON,
+        "?" => Token::QUESTIONMARK,
+        "//" => Token::DOUBLE_FORWARD_SLASH,
 
-        "{" => lexer::Tok::OPEN_CURLY,
-        "}" => lexer::Tok::CLOSE_CURLY,
+        "@" => Token::AT,
 
-        "=" => lexer::Tok::ASSIGN,
+        "=" => Token::ASSIGN,
 
-        "==" => lexer::Tok::EQ,
-        "!=" => lexer::Tok::NEQ,
-        "<=" => lexer::Tok::LEQ,
-        ">=" => lexer::Tok::GEQ,
-        "<" => lexer::Tok::LT,
-        ">" => lexer::Tok::GT,
-        "&&" => lexer::Tok::AND,
-        "||" => lexer::Tok::OR,
-        "->" => lexer::Tok::IMPL,
-        "//" => lexer::Tok::UPDATE,
-        "++" => lexer::Tok::CONCAT,
-        "-" => lexer::Tok::MINUS,
-        "+" => lexer::Tok::PLUS,
-        "/" => lexer::Tok::DIVIDE,
-        "*" => lexer::Tok::MULTIPLY,
-        "!" => lexer::Tok::NEGATE,
+        "==" => Token::EQ,
+        "!=" => Token::NEQ,
+        "<=" => Token::LEQ,
+        ">=" => Token::GEQ,
+        "<" => Token::LT,
+        ">" => Token::GT,
+        "&&" => Token::AND,
+        "||" => Token::OR,
+        "->" => Token::IMPL,
+        "//" => Token::UPDATE,
+        "++" => Token::CONCAT,
+        "-" => Token::MINUS,
+        "+" => Token::PLUS,
+        "/" => Token::DIVIDE,
+        "*" => Token::MULTIPLY,
+        "!" => Token::NEGATE,
 
-        "(" => lexer::Tok::OPEN_PAREN,
-        ")" => lexer::Tok::CLOSE_PAREN,
+        "(" => Token::OPEN_PAREN,
+        ")" => Token::CLOSE_PAREN,
 
-        "[" => lexer::Tok::OPEN_SQUARE,
-        "]" => lexer::Tok::CLOSE_SQUARE,
+        "[" => Token::OPEN_SQUARE,
+        "]" => Token::CLOSE_SQUARE,
 
-        PATH => lexer::Tok::PATH,
+        "{" => Token::OPEN_CURLY,
+        "}" => Token::CLOSE_CURLY,
     }
 }
