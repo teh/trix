@@ -65,7 +65,7 @@ pub enum LexState<'a> {
 
 %%
 %class Lexer
-%field Vec<LexState<'a>> state_stack
+%field Vec<usize> state_stack
 %field usize consumed
 %result_type Token
 
@@ -77,8 +77,9 @@ pub enum LexState<'a> {
     return Ok(Token::PATH(self.yytext()));}
 
 "\"" {
-        self.state_stack.push(LexState::String(self.zz_current_pos, self.current.clone()));
+        self.state_stack.push(Lexer::STRING);
         self.yybegin(Lexer::STRING);
+        return Ok(Token::STRING_PART(self.yytext())); // todo should return STRING_DELIMITER
     }
 "or"            return Ok(Token::OR_KW);
 ","             return Ok(Token::COMMA);
@@ -122,35 +123,36 @@ inherit         return Ok(Token::INHERIT);
 "]"             return Ok(Token::CLOSE_SQUARE);
 "{"             return Ok(Token::OPEN_CURLY);
 "}" {
-
+        let state = self.state_stack.pop().unwrap();
+        self.yybegin(state);
         return Ok(Token::CLOSE_CURLY);
     }
 
-<STRING>([^\"$\\]|\$[^\"{\\]|\\.\n)* {}
-<STRING>"\"" { return Ok(Token::STRING_PART(self.yystring(1)?)); }
+<STRING>([^\"$]|\$[^\"{]|\\)* { return Ok(Token::STRING_PART(self.yytext())); }
+<STRING>"\"" { return Ok(Token::STRING_PART(self.yytext())); }
 <STRING>"${" {
-        self.state_stack.push(LexState::NormalInString);
         self.yybegin(Lexer::YYINITIAL);
+        return Ok(Token::DOLLAR_CURLY);
     }
 
 " "    /* Skip white space. This comment cannot be omitted. TODO - check state*/
 %%
 
-// like yytext but for the string state (different length)
-pub fn yystring(&mut self, close_length: usize) -> Result<String, Error> {
-    let out = if let Some(LexState::String(string_start, start_char)) = self.state_stack.last() {
-        // TODO(tom) - I don't know why I need the - 1 here.
-        let len = self.zz_marked_pos - string_start - close_length - 1;
-        let mut text = String::with_capacity(len);
-        let mut chars = start_char.clone();
-        for _ in 0..len {
-            text.push(match chars.next() { Some(c) => c, _ => break,});
-        }
-        Ok(text)
-    } else {
-        Err((Error::Unmatch))
-    };
-    self.state_stack.pop();
-    self.yybegin(Lexer::YYINITIAL);
-    return out;
-}
+// // like yytext but for the string state (different length)
+// pub fn yystring(&mut self, close_length: usize) -> Result<String, Error> {
+//     let out = if let Some(LexState::String(string_start, start_char)) = self.state_stack.last() {
+//         // TODO(tom) - I don't know why I need the - 1 here.
+//         let len = self.zz_marked_pos - string_start - close_length - 1;
+//         let mut text = String::with_capacity(len);
+//         let mut chars = start_char.clone();
+//         for _ in 0..len {
+//             text.push(match chars.next() { Some(c) => c, _ => break,});
+//         }
+//         Ok(text)
+//     } else {
+//         Err((Error::Unmatch))
+//     };
+//     self.state_stack.pop();
+//     self.yybegin(Lexer::YYINITIAL);
+//     return out;
+// }

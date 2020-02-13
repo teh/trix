@@ -47,15 +47,17 @@ mod tests {
         assert_eq!(lexer.yylex().unwrap(), Token::PATH("./path".to_string()));
 
         let mut lexer = Lexer::new(r#""xx-s-xx""#, Vec::new(), 0);
+        lexer.yylex().unwrap();
         assert_eq!(lexer.yylex().unwrap(), Token::STRING_PART("xx-s-xx".to_string()));
 
         let mut lexer = Lexer::new(r#""xx-s\\-xx""#, Vec::new(), 0);
+        lexer.yylex().unwrap();
         assert_eq!(lexer.yylex().unwrap(), Token::STRING_PART(r"xx-s\\-xx".to_string()));
         // TODO escape sequences, interpolation
     }
     #[test]
     fn check_nested() {
-        let mut lexer = Lexer::new(r#""x${"x"}x""#, Vec::new(), 0);
+        let mut lexer = Lexer::new(r#""x${1}x""#, Vec::new(), 0);
         while let Ok(x) = lexer.yylex() {
             println!("{:?}", x);
         }
