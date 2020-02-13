@@ -5,33 +5,22 @@
 use crate::expr::{Expr, GcExpr, Symbol};
 use gc_arena::{Gc, MutationContext};
 use std::str::FromStr;
-
+use crate::lexer;
 
 grammar<'gc, 'cx>(mc: MutationContext<'gc, 'cx>);
 
-pub Id: Symbol = {
-    r"[a-zA-Z_][a-zA-Z0-_'\\-]*" => Symbol::from(<>)
-}
-
-pub Int: GcExpr<'gc> = {
-    r"[0-9]+" => Gc::allocate(mc, Expr::Int(i64::from_str(<>).unwrap()))
-};
-
-Path: String = {
-    r"[a-zA-Z0-9\\._\-\+]*(/[a-zA-Z0-9\\._\-\+]+)+/?" => String::from(<>)
-}
 
 pub expr: GcExpr<'gc> = { lambda_def };
 
 
 pub lambda_def: GcExpr<'gc> = {
-    <arg:Id> ":" <body:expr_function> => {
+    <arg:ID> ":" <body:expr_function> => {
          Gc::allocate(mc, Expr::Lambda { arg: Some(arg), body, formals: (vec![], false) }) },
     // "{" <formals:formal+> "}" ":" <body:expr_function> => {
     //      Gc::allocate(mc, Expr::Lambda { arg: None, formals, body }) },
-    // "{" <formals:formal+> "}" "@" <arg:Id> ":" <body:expr_function> => {
+    // "{" <formals:formal+> "}" "@" <arg:ID> ":" <body:expr_function> => {
     //      Gc::allocate(mc, Expr::Lambda { arg: Some(arg), formals, body }) },
-    <arg:Id> "@" "{" <formals:formals> "}" ":" <body:expr_function> => {
+    <arg:ID> "@" "{" <formals:formals> "}" ":" <body:expr_function> => {
         // TODO handle ... or move the @ handling down
         Gc::allocate(mc, Expr::Lambda { arg: Some(arg), formals: (formals, false), body }) },
     "{" <formals_or_binds:formals_or_binds> => { formals_or_binds },
@@ -170,39 +159,21 @@ pub expr_op_p14: GcExpr<'gc> = {
 }
 // -----------------------------------------------------------------------
 
-
-// expr_select: GcExpr<'gc> = {
-//     <expr:expr_simple> "." <attr_path:attrpath> => {
-//         Gc::allocate(mc, Expr::Select { expr, attr_path })
-//     },
-//     // { a = "a"; }.b or "b" - I had no idea ..
-//     <expr:expr_simple> "." <attr_path_left:attrpath> "or" <attr_path_right:attrpath> => {
-//         Gc::allocate(mc, Expr::SelectOr { expr, attr_path_left, attr_path_right })
-//     },
-//     // | /* Backwards compatibility: because Nixpkgs has a rarely used
-//     //    function named ‘or’, allow stuff like ‘map or [...]’. */
-//     // expr_simple OR_KW
-//     // { $$ = new ExprApp(CUR_POS, $1, new ExprVar(CUR_POS, data->symbols.create("or"))); }
-//     expr_simple
-// }
-
 // TODO what is HPATH and SPATH?
 // TODO do we want to keep URIs?
 // TODO floats
 expr_simple: GcExpr<'gc> = {
-    <id:Id> => {
+    <id:ID> => {
         Gc::allocate(mc, Expr::Var(id))
     },
-    r"[0-9]+" => {
-        Gc::allocate(mc, Expr::Int(i64::from_str(<>).unwrap()))
-    },
+    <int:INT> => { int },
     <parts:string_parts> => {
          Gc::allocate(mc, Expr::String(parts))
     },
     // "''" <parts:ind_string_parts> "''" => {
     //     Gc::allocate(mc, Expr::String(parts))
     // }, // TODO strip indendtation
-    <path:Path> => {
+    <path:PATH> => {
         Gc::allocate(mc, Expr::Path(path))
     },
     "(" <expr:expr> ")" => {
@@ -228,8 +199,13 @@ expr_simple: GcExpr<'gc> = {
 
 // TODO - string interpolation needs to mop up symbols until it hits "${"
 //
+// contents: &str = r#"([^\$"\\]|\$[^\{"\\])*"#;
+
 string_parts: String = {
-    r#""[^"]*""# => String::from(<>)
+    // "\"" <s:contents> "\"" => s.to_string(),
+    // "\"" <s:contents> "${" => s.to_string(),
+    // <s:INTERP_STRING> <expr:expr> CLOSE_INTERP_STRING => format!("I,{},{:?},I", s, expr), //expr CLOSE_INTERP_STRING => s.to_string(),
+    // <s:NORMAL_STRING> => s.to_string(),
 }
 //   : STR
 //   | string_parts_interpolated { $$ = new ExprConcatStrings(CUR_POS, true, $1); }
@@ -308,7 +284,7 @@ attrpath: Vec<GcExpr<'gc>> = {
 }
 
 attr: GcExpr<'gc> = {
-    Id => Gc::allocate(mc, Expr::Var(<>)),
+    ID => Gc::allocate(mc, Expr::Var(<>)),
 }
 //   | OR_KW { $$ = "or"; } TODO I really don't understand where the or keyword is happening...
 
@@ -340,10 +316,75 @@ formals: Vec<GcExpr<'gc>> = {
 }
 
 formal: GcExpr<'gc> = {
-    Id => {
+    ID => {
         Gc::allocate(mc, Expr::Formal(<>, None))
     },
-    <id:Id> "?" <expr:expr> => {
+    <id:ID> "?" <expr:expr> => {
         Gc::allocate(mc, Expr::Formal(id, Some(expr)))
     },
+}
+
+extern {
+    type Location = usize;
+    type Error = lexer::LexicalError;
+
+    enum lexer::Tok {
+        ID => lexer::Tok::ID,
+        ","  => lexer::Tok::COMMA,
+        INT => lexer::Tok::INT,
+        FLOAT =>lexer::Tok::FLOAT,
+        STRING_START => lexer::Tok::STRING_START,
+        "${" => lexer::Tok::DOLLAR_CURLY,
+
+        "if" => lexer::Tok::IF,
+        "then" => lexer::Tok::THEN,
+        "else" => lexer::Tok::ELSE,
+        "assert" => lexer::Tok::ASSERT,
+        "with" => lexer::Tok::WITH,
+        "let" => lexer::Tok::LET,
+        "in" => lexer::Tok::IN,
+        "rec" => lexer::Tok::REC,
+        "inherit" => lexer::Tok::INHERIT,
+        OR_KW => lexer::Tok::OR_KW,
+        "..." => lexer::Tok::ELLIPSIS,
+
+        "," => lexer::Tok::COMMA,
+        "." => lexer::Tok::DOT,
+        ":" => lexer::Tok::COLON,
+        ";" => lexer::Tok::SEMICOLON,
+        "?" => lexer::Tok::QUESTIONMARK,
+        "//" => lexer::Tok::DOUBLE_FORWARD_SLASH,
+
+        "@" => lexer::Tok::AT,
+
+        "{" => lexer::Tok::OPEN_CURLY,
+        "}" => lexer::Tok::CLOSE_CURLY,
+
+        "=" => lexer::Tok::ASSIGN,
+
+        "==" => lexer::Tok::EQ,
+        "!=" => lexer::Tok::NEQ,
+        "<=" => lexer::Tok::LEQ,
+        ">=" => lexer::Tok::GEQ,
+        "<" => lexer::Tok::LT,
+        ">" => lexer::Tok::GT,
+        "&&" => lexer::Tok::AND,
+        "||" => lexer::Tok::OR,
+        "->" => lexer::Tok::IMPL,
+        "//" => lexer::Tok::UPDATE,
+        "++" => lexer::Tok::CONCAT,
+        "-" => lexer::Tok::MINUS,
+        "+" => lexer::Tok::PLUS,
+        "/" => lexer::Tok::DIVIDE,
+        "*" => lexer::Tok::MULTIPLY,
+        "!" => lexer::Tok::NEGATE,
+
+        "(" => lexer::Tok::OPEN_PAREN,
+        ")" => lexer::Tok::CLOSE_PAREN,
+
+        "[" => lexer::Tok::OPEN_SQUARE,
+        "]" => lexer::Tok::CLOSE_SQUARE,
+
+        PATH => lexer::Tok::PATH,
+    }
 }

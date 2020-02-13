@@ -11,4 +11,13 @@ mod tests {
             println!("{:?}", *i);
         });
     }
+    #[test]
+    fn check_string() {
+        rootless_arena(|mc| {
+            let i = crate::expr_parser::exprParser::new().parse(mc, "\"hello\"").unwrap();
+            println!("{:?}", *i);
+            let i = crate::expr_parser::exprParser::new().parse(mc, "\"hello ${1}\"").unwrap();
+            println!("{:?}", *i);
+        });
+    }
 }

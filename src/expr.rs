@@ -99,7 +99,7 @@ impl<'gc> PartialEq for Expr<'gc> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Expr::Int(s), Expr::Int(o)) => s == o,
-            _ => unimplemented!("cannot eq-compare {:?} with {:?} yet", self, other),
+            _ => unimplemented!("cannot eq-compare {:?} with {:?}", self, other),
         }
     }
 }
