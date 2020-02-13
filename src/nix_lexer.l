@@ -3,6 +3,7 @@ pub enum Token {
     ID(String),
     INT(i64),
     FLOAT(String),
+    STRING_PART(String),
     STRING_START,
     DOLLAR_CURLY,
     PATH(String),
@@ -54,24 +55,30 @@ pub enum Token {
     WHITE_SPACE,
 }
 
-pub enum LexState {
-    Normal,
-    String,
+#[derive(Clone, Debug)]
+pub enum LexState<'a> {
+    String(usize, std::str::Chars<'a>),
     IndString,
 }
 
 
 %%
 %class Lexer
-%field Vec<LexState> state_stack
+%field Vec<LexState<'a>> state_stack
 %field usize consumed
 %result_type Token
 
-[a-zA-Z_][a-zA-Z0-9_'\-]*                           return Ok(Token::ID(self.yytext()));
-[0-9]+                                              return Ok(Token::INT(self.yytext().parse::<i64>().unwrap()));
-[a-zA-Z0-9\._\-\+]*(/[a-zA-Z0-9\._\-\+]+)+/?    return Ok(Token::PATH(self.yytext()));
+[a-zA-Z_][a-zA-Z0-9_'\-]*  {
+    return Ok(Token::ID(self.yytext())); }
+[0-9]+  {
+    return Ok(Token::INT(self.yytext().parse::<i64>().unwrap())); }
+[a-zA-Z0-9\._\-\+]*(/[a-zA-Z0-9\._\-\+]+)+/?  {
+    return Ok(Token::PATH(self.yytext()));}
 
-"\""            return Ok(Token::STRING_START);
+"\"" {
+        self.state_stack.push(LexState::String(self.zz_current_pos, self.current.clone()));
+        self.yybegin(Lexer::STRING);
+    }
 "or"            return Ok(Token::OR_KW);
 ","             return Ok(Token::COMMA);
 "${"            return Ok(Token::DOLLAR_CURLY);
@@ -115,6 +122,26 @@ inherit         return Ok(Token::INHERIT);
 "{"             return Ok(Token::OPEN_CURLY);
 "}"             return Ok(Token::CLOSE_CURLY);
 
-[0-9]+   return Ok(Token::INT(self.yytext().parse::<i64>().unwrap()));
+<STRING>([^\"])*  {}
+<STRING>"\"" { let s = self.yystring(1)?; return Ok(Token::STRING_PART(s)); }
 " "    /* Skip white space. This comment cannot be omitted. TODO - check state*/
 %%
+
+// like yytext but for the string state (different length)
+pub fn yystring(&mut self, close_length: usize) -> Result<String, Error> {
+    let out = if let Some(LexState::String(string_start, start_char)) = self.state_stack.last() {
+        // TODO(tom) - I don't know why I need the - 1 here.
+        let len = self.zz_marked_pos - string_start - close_length - 1;
+        let mut text = String::with_capacity(len);
+        let mut chars = start_char.clone();
+        for _ in 0..len {
+            text.push(match chars.next() { Some(c) => c, _ => break,});
+        }
+        Ok(text)
+    } else {
+        Err((Error::Unmatch))
+    };
+    self.state_stack.pop();
+    self.yybegin(Lexer::YYINITIAL);
+    return out;
+}

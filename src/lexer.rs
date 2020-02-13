@@ -46,5 +46,7 @@ mod tests {
         let mut lexer = Lexer::new("./path", Vec::new(), 0);
         assert_eq!(lexer.yylex().unwrap(), Token::PATH("./path".to_string()));
 
+        let mut lexer = Lexer::new("\"xx-s-xx\"", Vec::new(), 0);
+        assert_eq!(lexer.yylex().unwrap(), Token::STRING_PART("xx-s-xx".to_string()));
     }
 }
