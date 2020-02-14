@@ -55,12 +55,28 @@ mod tests {
         assert_eq!(lexer.yylex().unwrap(), Token::STRING_PART(r"xx-s\\-xx".to_string()));
         // TODO escape sequences, interpolation
     }
+
+    fn _collect(lexer: &mut Lexer) -> Vec<Token> {
+        let mut ret = Vec::new();
+        while let Ok(x) = lexer.yylex() {
+            ret.push(x);
+        }
+        ret
+    }
+
     #[test]
     fn check_nested() {
         let mut lexer = Lexer::new(r#""x${1}x""#, Vec::new(), 0);
-        while let Ok(x) = lexer.yylex() {
-            println!("{:?}", x);
-        }
+        let vv = _collect(&mut lexer);
+        println!("{:?}", vv);
+        assert_eq!(vv, vec![
+            Token::STRING_PART("\"".to_string()),
+            Token::STRING_PART("x".to_string()),
+            Token::DOLLAR_CURLY,
+            Token::INT(1),
+            Token::CLOSE_CURLY,
+            Token::STRING_PART("x".to_string()),
+            Token::STRING_PART("\"".to_string()),
+        ]);
     }
-
 }
