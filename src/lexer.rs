@@ -67,7 +67,7 @@ mod tests {
             match x  {
                 Ok(x) => ret.push(x),
                 Err(Error::EOF) => break,
-                Err(Error::Unmatch) => panic!("_collect failed at {:?}", lexer.error_state()),
+                Err(Error::Unmatch) => panic!("_collect failed at {:?}. So far: {:?}", lexer.error_state(), ret),
             }
         }
         return ret;
@@ -121,8 +121,9 @@ mod tests {
     #[test]
     fn smoke_test_lexing() {
         // lex all the files that we also expect to parse OK
-        let dir = glob::glob("./src/lang-tests/parse-okay-*").expect("invalid glob pattern");
-        for entry in dir {
+        let m1 = glob::glob("./src/lang-tests/parse-okay-*").expect("invalid glob pattern");
+        let m2 = glob::glob("./src/lang-tests/eval-okay-*").expect("invalid glob pattern");
+        for entry in m1.chain(m2) {
             match entry {
                 Ok(path) => {
                     println!("{:?}", path);

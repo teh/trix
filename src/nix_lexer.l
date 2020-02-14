@@ -135,32 +135,18 @@ inherit         return Ok(Token::INHERIT);
 <STRING>"\"" { return Ok(Token::STRING_QUOTE); }
 <STRING>"${" {
         self.yybegin(Lexer::YYINITIAL);
+        self.state_stack.push(Lexer::YYINITIAL);
         return Ok(Token::DOLLAR_CURLY);
     }
 
+[\#][^\n]*    /* single-line comments */
+/\*([^\*]|\*+[^\*/])*\*+/  /* long comments */
+
 " "    /* Skip white space. This comment cannot be omitted. */
 \n     /* Skip white space. This comment cannot be omitted. */
+\t     /**/
 %%
 
 pub fn error_state(&self) -> (usize, usize, usize) {
     (self.zz_marked_pos, self.zz_current_pos, self.zz_start_read)
 }
-
-// // like yytext but for the string state (different length)
-// pub fn yystring(&mut self, close_length: usize) -> Result<String, Error> {
-//     let out = if let Some(LexState::String(string_start, start_char)) = self.state_stack.last() {
-//         // TODO(tom) - I don't know why I need the - 1 here.
-//         let len = self.zz_marked_pos - string_start - close_length - 1;
-//         let mut text = String::with_capacity(len);
-//         let mut chars = start_char.clone();
-//         for _ in 0..len {
-//             text.push(match chars.next() { Some(c) => c, _ => break,});
-//         }
-//         Ok(text)
-//     } else {
-//         Err((Error::Unmatch))
-//     };
-//     self.state_stack.pop();
-//     self.yybegin(Lexer::YYINITIAL);
-//     return out;
-// }
