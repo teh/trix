@@ -5,6 +5,7 @@ pub enum Token {
     FLOAT(String),
     STRING_PART(String),
     STRING_QUOTE,
+    INDENTED_STRING_QUOTE,
     DOLLAR_CURLY,
     PATH(String),
     // keywords
@@ -55,13 +56,6 @@ pub enum Token {
     WHITE_SPACE,
 }
 
-#[derive(Clone, Debug)]
-pub enum LexState<'a> {
-    NormalInString,
-    String(usize, std::str::Chars<'a>),
-    IndString,
-}
-
 
 %%
 %class Lexer
@@ -80,6 +74,11 @@ pub enum LexState<'a> {
         self.state_stack.push(Lexer::STRING);
         self.yybegin(Lexer::STRING);
         return Ok(Token::STRING_QUOTE);
+    }
+"''" {
+        self.state_stack.push(Lexer::INDENTED_STRING);
+        self.yybegin(Lexer::INDENTED_STRING);
+        return Ok(Token::INDENTED_STRING_QUOTE);
     }
 "or"            return Ok(Token::OR_KW);
 ","             return Ok(Token::COMMA);
@@ -138,6 +137,15 @@ inherit         return Ok(Token::INHERIT);
         self.state_stack.push(Lexer::YYINITIAL);
         return Ok(Token::DOLLAR_CURLY);
     }
+
+<INDENTED_STRING>([^\"$]|\$[^\"{]|\\)* { return Ok(Token::STRING_PART(self.yytext())); }
+<INDENTED_STRING>"\"" { return Ok(Token::STRING_QUOTE); }
+<INDENTED_STRING>"${" {
+        self.yybegin(Lexer::YYINITIAL);
+        self.state_stack.push(Lexer::YYINITIAL);
+        return Ok(Token::DOLLAR_CURLY);
+    }
+
 
 [\#][^\n]*    /* single-line comments */
 /\*([^\*]|\*+[^\*/])*\*+/  /* long comments */
