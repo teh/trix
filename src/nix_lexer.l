@@ -130,7 +130,7 @@ inherit         return Ok(Token::INHERIT);
         return Ok(Token::CLOSE_CURLY);
     }
 
-<STRING>([^\"$]|\$[^\"{]|\\.)* { return Ok(Token::STRING_PART(self.yytext())); }
+<STRING>([^\"$]|\$[^\"{]|\\.|\\\n)* { return Ok(Token::STRING_PART(self.yytext())); }
 <STRING>"\"" {
         let state = self.state_stack.pop().unwrap();
         self.yybegin(state);
@@ -147,6 +147,7 @@ inherit         return Ok(Token::INHERIT);
 <INDENTEDSTRING>\$ { return Ok(Token::STRING_PART("$".to_string())); }
 <INDENTEDSTRING>''' { return Ok(Token::STRING_PART("''".to_string())); }
 <INDENTEDSTRING>''\\. { return Ok(Token::STRING_PART(self.yytext())); }
+<INDENTEDSTRING>''\\\n { return Ok(Token::STRING_PART(self.yytext())); }
 <INDENTEDSTRING>''\$ { return Ok(Token::STRING_PART(self.yytext())); }
 <INDENTEDSTRING>' { return Ok(Token::STRING_PART(self.yytext())); }
 <INDENTEDSTRING>'' {
