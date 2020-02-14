@@ -13,4 +13,7 @@ lalrpop-util = "0.17.2"
 [build-dependencies]
 rflex = "0.5.0"
 lalrpop = "0.17.2"
+
+[dev-dependencies]
 proptest = "0.9.5"
+glob = "0.3.0"
