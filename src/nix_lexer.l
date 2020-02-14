@@ -71,13 +71,13 @@ pub enum Token {
     return Ok(Token::PATH(self.yytext()));}
 
 "\"" {
-        self.state_stack.push(Lexer::STRING);
+        self.state_stack.push(self.yystate());
         self.yybegin(Lexer::STRING);
         return Ok(Token::STRING_QUOTE);
     }
 "''" {
-        self.state_stack.push(Lexer::INDENTED_STRING);
-        self.yybegin(Lexer::INDENTED_STRING);
+        self.state_stack.push(self.yystate());
+        self.yybegin(Lexer::INDENTEDSTRING);
         return Ok(Token::INDENTED_STRING_QUOTE);
     }
 "or"            return Ok(Token::OR_KW);
@@ -121,7 +121,7 @@ inherit         return Ok(Token::INHERIT);
 "["             return Ok(Token::OPEN_SQUARE);
 "]"             return Ok(Token::CLOSE_SQUARE);
 "{" {
-        self.state_stack.push(Lexer::YYINITIAL);
+        self.state_stack.push(self.yystate());
         return Ok(Token::OPEN_CURLY);
     }
 "}" {
@@ -130,24 +130,38 @@ inherit         return Ok(Token::INHERIT);
         return Ok(Token::CLOSE_CURLY);
     }
 
-<STRING>([^\"$]|\$[^\"{]|\\)* { return Ok(Token::STRING_PART(self.yytext())); }
-<STRING>"\"" { return Ok(Token::STRING_QUOTE); }
+<STRING>([^\"$]|\$[^\"{]|\\.)* { return Ok(Token::STRING_PART(self.yytext())); }
+<STRING>"\"" {
+        let state = self.state_stack.pop().unwrap();
+        self.yybegin(state);
+        return Ok(Token::STRING_QUOTE);
+    }
 <STRING>"${" {
+        self.state_stack.push(self.yystate());
         self.yybegin(Lexer::YYINITIAL);
-        self.state_stack.push(Lexer::YYINITIAL);
         return Ok(Token::DOLLAR_CURLY);
     }
 
-<INDENTED_STRING>([^\"$]|\$[^\"{]|\\)* { return Ok(Token::STRING_PART(self.yytext())); }
-<INDENTED_STRING>"\"" { return Ok(Token::STRING_QUOTE); }
-<INDENTED_STRING>"${" {
+<INDENTEDSTRING>([^'$]|\$[^'{]|'[^'$])+ { return Ok(Token::STRING_PART(self.yytext())); }
+<INDENTEDSTRING>''\$ { return Ok(Token::STRING_PART("$".to_string())); }
+<INDENTEDSTRING>\$ { return Ok(Token::STRING_PART("$".to_string())); }
+<INDENTEDSTRING>''' { return Ok(Token::STRING_PART("''".to_string())); }
+<INDENTEDSTRING>''\\. { return Ok(Token::STRING_PART(self.yytext())); }
+<INDENTEDSTRING>''\$ { return Ok(Token::STRING_PART(self.yytext())); }
+<INDENTEDSTRING>' { return Ok(Token::STRING_PART(self.yytext())); }
+<INDENTEDSTRING>'' {
+        let state = self.state_stack.pop().unwrap();
+        self.yybegin(state);
+        return Ok(Token::INDENTED_STRING_QUOTE);
+    }
+<INDENTEDSTRING>"${" {
+        self.state_stack.push(self.yystate());
         self.yybegin(Lexer::YYINITIAL);
-        self.state_stack.push(Lexer::YYINITIAL);
         return Ok(Token::DOLLAR_CURLY);
     }
 
 
-[\#][^\n]*    /* single-line comments */
+#.*$                  /* single-line comments */
 /\*([^\*]|\*+[^\*/])*\*+/  /* long comments */
 
 " "    /* Skip white space. This comment cannot be omitted. */

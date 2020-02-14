@@ -64,6 +64,7 @@ mod tests {
         let mut ret = Vec::new();
         loop {
             let x = lexer.yylex();
+            println!("{:?}", x);
             match x  {
                 Ok(x) => ret.push(x),
                 Err(Error::EOF) => break,
@@ -121,9 +122,11 @@ mod tests {
     #[test]
     fn smoke_test_lexing() {
         // lex all the files that we also expect to parse OK
-        let m1 = glob::glob("./src/lang-tests/parse-okay-*").expect("invalid glob pattern");
-        let m2 = glob::glob("./src/lang-tests/eval-okay-*").expect("invalid glob pattern");
-        for entry in m1.chain(m2) {
+        let m1 = glob::glob("./src/lang-tests/parse-okay-*.nix").expect("invalid glob pattern");
+        let m2 = glob::glob("./src/lang-tests/eval-okay-*.nix").expect("invalid glob pattern");
+        let m3 = m1.chain(m2);
+        let m3 = glob::glob("./src/lang-tests/eval-okay-ind-string*.nix").expect("");
+        for entry in m3 {
             match entry {
                 Ok(path) => {
                     println!("{:?}", path);
