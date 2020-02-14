@@ -168,8 +168,8 @@ expr_simple: GcExpr<'gc> = {
         Gc::allocate(mc, Expr::Var(id))
     },
     <int:INT> => { Gc::allocate(mc, Expr::Int(int)) },
-    <parts:string_parts> => {
-         Gc::allocate(mc, Expr::String(parts))
+    <parts:string_parts > => {
+        Gc::allocate(mc, Expr::InterpolatedString(parts))
     },
     // "''" <parts:ind_string_parts> "''" => {
     //     Gc::allocate(mc, Expr::String(parts))
@@ -202,33 +202,19 @@ expr_simple: GcExpr<'gc> = {
 //
 // contents: &str = r#"([^\$"\\]|\$[^\{"\\])*"#;
 
-string_parts: String = {
-    // "\"" <s:contents> "\"" => s,
-    // "\"" <s:contents> "${" => s,
-    // <s:INTERP_STRING> <expr:expr> CLOSE_INTERP_STRING => format!("I,{},{:?},I", s, expr), //expr CLOSE_INTERP_STRING => s,
-    // <s:NORMAL_STRING> => s,
+string_parts: Vec<GcExpr<'gc>> = {
+    STR_QUOTE <part:STRING_PART> STR_QUOTE => {
+        // Can probably skip the intermediate Vec allocation here
+        vec![Gc::allocate(mc, Expr::String(part))]
+    },
+    STR_QUOTE <left_part:STRING_PART> "${" <expr:expr> <right_part:STRING_PART> STR_QUOTE => {
+        vec![
+            Gc::allocate(mc, Expr::String(left_part)),
+            Gc::allocate(mc, Expr::String(right_part)),
+        ]
+    },
 }
-//   : STR
-//   | string_parts_interpolated { $$ = new ExprConcatStrings(CUR_POS, true, $1); }
-//   | { $$ = new ExprString(data->symbols.create("")); }
-//   ;
 
-// string_parts_interpolated
-//   : string_parts_interpolated STR { $$ = $1; $1->push_back($2); }
-//   | string_parts_interpolated "${" expr "}" { $$ = $1; $1->push_back($3); }
-//   | "${" expr "}" { $$ = new vector<Expr *>; $$->push_back($2); }
-//   | STR "${" expr "}" {
-//       $$ = new vector<Expr *>;
-//       $$->push_back($1);
-//       $$->push_back($3);
-//     }
-//   ;
-
-// ind_string_parts
-//   : ind_string_parts IND_STR { $$ = $1; $1->push_back($2); }
-//   | ind_string_parts "${" expr "}" { $$ = $1; $1->push_back($3); }
-//   | { $$ = new vector<Expr *>; }
-//   ;
 
 binds: Vec<(Vec<GcExpr<'gc>>, GcExpr<'gc>)> = {
     <bind:bind> => {
@@ -291,8 +277,8 @@ attr: GcExpr<'gc> = {
 
 string_attr: GcExpr<'gc> = {
     <parts:string_parts> => {
+        Gc::allocate(mc, Expr::InterpolatedString(parts))
         // I'm slightly confused about what can be used as a string_attr, (TODO)
-        Gc::allocate(mc, Expr::Var(parts))
     },
     // TODO ${} access is a bit confusing, apparently the following is valid and used a lot:
     // let a.b.c = 1; in a.${"b"}
@@ -334,11 +320,12 @@ extern {
         INT => Token::INT(<i64>),
         FLOAT =>Token::FLOAT(<String>),
         PATH => Token::PATH(<String>),
-        STRING_START => Token::STRING_START,
+        STRING_PART => Token::STRING_PART(<String>),
 
         OR_KW => Token::OR_KW,
         ","  => Token::COMMA,
         "${" => Token::DOLLAR_CURLY,
+        STR_QUOTE => Token::STRING_QUOTE,
 
         "if" => Token::IF,
         "then" => Token::THEN,

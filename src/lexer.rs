@@ -1,4 +1,4 @@
-use crate::lexer::nix_lexer::{Lexer, Token};
+use crate::lexer::nix_lexer::{Lexer, Token, Error};
 use lalrpop_util;
 /// Unfortunately we can't get away with just using the lexer that ships with
 /// lalrpop because it really is just a lexer, but string interpolation in nix
@@ -10,8 +10,9 @@ pub mod nix_lexer {
     include!(concat!(env!("OUT_DIR"), "/nix_lexer.rs"));
 }
 
+#[derive(Debug)]
 pub enum LexicalError {
-    NotGood
+    NotGood((usize, usize, usize))
 }
 
 impl<'input> Iterator for Lexer<'input> {
@@ -23,8 +24,9 @@ impl<'input> Iterator for Lexer<'input> {
                 let length = self.yylength();
                 let span = Ok((0, next_item, 1));
                 Some(span)
-            }
-            error => Some(Err(LexicalError::NotGood)),
+            },
+            Err(Error::EOF) => None,
+            Err(Error::Unmatch) => Some(Err(LexicalError::NotGood(self.error_state()))),
         }
     }
 }
@@ -70,13 +72,38 @@ mod tests {
         let vv = _collect(&mut lexer);
         println!("{:?}", vv);
         assert_eq!(vv, vec![
-            Token::STRING_PART("\"".to_string()),
+            Token::STRING_QUOTE,
             Token::STRING_PART("x".to_string()),
             Token::DOLLAR_CURLY,
             Token::INT(1),
             Token::CLOSE_CURLY,
             Token::STRING_PART("x".to_string()),
-            Token::STRING_PART("\"".to_string()),
+            Token::STRING_QUOTE,
         ]);
     }
+
+    #[test]
+    fn check_attr_lambda() {
+        let s = include_str!("lang-tests/parse-okay-1.nix");
+        let mut lexer = Lexer::new(s, Vec::new(), 0);
+
+        let vv = _collect(&mut lexer);
+        println!("{:?}", vv);
+        assert_eq!(vv, vec![
+            Token::OPEN_CURLY,
+            Token::ID("x".to_string()),
+            Token::COMMA,
+            Token::ID("y".to_string()),
+            Token::COMMA,
+            Token::ID("z".to_string()),
+            Token::CLOSE_CURLY,
+            Token::COLON,
+            Token::ID("x".to_string()),
+            Token::PLUS,
+            Token::ID("y".to_string()),
+            Token::PLUS,
+            Token::ID("z".to_string())
+        ]);
+    }
+
 }

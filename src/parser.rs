@@ -3,14 +3,18 @@
 mod tests {
     use super::*;
     use gc_arena::{rootless_arena};
-    // #[test]
-    // fn check_simple_expression() {
-    //     rootless_arena(|mc| {
-    //         let s = include_str!("lang-tests/parse-okay-1.nix");
-    //         let i = crate::expr_parser::exprParser::new().parse(mc, s).unwrap();
-    //         println!("{:?}", *i);
-    //     });
-    // }
+    use crate::lexer::nix_lexer::Lexer;
+    #[test]
+    fn check_simple_expression() {
+        rootless_arena(|mc| {
+            // TODO newlines are broken
+            let s = include_str!("lang-tests/parse-okay-1.nix");
+            let mut lex = Lexer::new(s, Vec::new(), 0);
+
+            let i = crate::expr_parser::exprParser::new().parse(mc, lex);
+            println!("{:?}", *i.unwrap());
+        });
+    }
     // #[test]
     // fn check_string() {
     //     rootless_arena(|mc| {

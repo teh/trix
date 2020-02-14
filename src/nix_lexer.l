@@ -4,7 +4,7 @@ pub enum Token {
     INT(i64),
     FLOAT(String),
     STRING_PART(String),
-    STRING_START,
+    STRING_QUOTE,
     DOLLAR_CURLY,
     PATH(String),
     // keywords
@@ -79,7 +79,7 @@ pub enum LexState<'a> {
 "\"" {
         self.state_stack.push(Lexer::STRING);
         self.yybegin(Lexer::STRING);
-        return Ok(Token::STRING_PART(self.yytext())); // todo should return STRING_DELIMITER
+        return Ok(Token::STRING_QUOTE);
     }
 "or"            return Ok(Token::OR_KW);
 ","             return Ok(Token::COMMA);
@@ -121,7 +121,10 @@ inherit         return Ok(Token::INHERIT);
 ")"             return Ok(Token::CLOSE_PAREN);
 "["             return Ok(Token::OPEN_SQUARE);
 "]"             return Ok(Token::CLOSE_SQUARE);
-"{"             return Ok(Token::OPEN_CURLY);
+"{" {
+        self.state_stack.push(Lexer::YYINITIAL);
+        return Ok(Token::OPEN_CURLY);
+    }
 "}" {
         let state = self.state_stack.pop().unwrap();
         self.yybegin(state);
@@ -129,14 +132,19 @@ inherit         return Ok(Token::INHERIT);
     }
 
 <STRING>([^\"$]|\$[^\"{]|\\)* { return Ok(Token::STRING_PART(self.yytext())); }
-<STRING>"\"" { return Ok(Token::STRING_PART(self.yytext())); }
+<STRING>"\"" { return Ok(Token::STRING_QUOTE); }
 <STRING>"${" {
         self.yybegin(Lexer::YYINITIAL);
         return Ok(Token::DOLLAR_CURLY);
     }
 
-" "    /* Skip white space. This comment cannot be omitted. TODO - check state*/
+" "    /* Skip white space. This comment cannot be omitted. */
+\n     /* Skip white space. This comment cannot be omitted. */
 %%
+
+pub fn error_state(&self) -> (usize, usize, usize) {
+    (self.zz_marked_pos, self.zz_current_pos, self.zz_start_read)
+}
 
 // // like yytext but for the string state (different length)
 // pub fn yystring(&mut self, close_length: usize) -> Result<String, Error> {

@@ -17,8 +17,11 @@ pub enum Expr<'gc> {
     // TODO should probably keep `Formal` in a separate structure
     Formal(Symbol, Option<GcExpr<'gc>>),
     InheritedVar(Symbol),
-    // TODO: what about expressions in the string?
     String(String),
+
+    // Interpolated strings are made up of expressions (either Expr::String or
+    // some other expression that must evaluate to Expr::String)
+    InterpolatedString(Vec<GcExpr<'gc>>),
     Path(String),
     List(Vec<GcExpr<'gc>>),
     Attrs {
