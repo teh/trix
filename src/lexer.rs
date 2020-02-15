@@ -1,10 +1,11 @@
-use crate::lexer::nix_lexer::{Error, Lexer, Token};
-use lalrpop_util;
 /// Unfortunately we can't get away with just using the lexer that ships with
 /// lalrpop because it really is just a lexer, but string interpolation in nix
 /// requires the lexer to switch between in-string and out-of-string scanning
 /// mode. On top of that the lexer needs to keep track on how deep the
 /// expression nesting is to make sure it's balanced.
+
+use crate::lexer::nix_lexer::{Error, Lexer, Token};
+use lalrpop_util;
 
 pub mod nix_lexer {
     include!(concat!(env!("OUT_DIR"), "/nix_lexer.rs"));
@@ -60,11 +61,12 @@ mod tests {
         // TODO escape sequences, interpolation
     }
 
-    fn _collect(lexer: &mut Lexer) -> Vec<Token> {
+    fn _collect(lexer: &mut Lexer, trace: bool) -> Vec<Token> {
         let mut ret = Vec::new();
         loop {
             let x = lexer.yylex();
-            match x  {
+            if trace { println!("- {:?}", x); }
+            match x {
                 Ok(x) => ret.push(x),
                 Err(Error::EOF) => break,
                 Err(Error::Unmatch) => panic!("_collect failed at {:?}. So far: {:?}", lexer.error_state(), ret),
@@ -76,7 +78,7 @@ mod tests {
     #[test]
     fn check_nested() {
         let mut lexer = Lexer::new(r#""x${1}x""#, Vec::new(), 0);
-        let vv = _collect(&mut lexer);
+        let vv = _collect(&mut lexer, false);
         println!("{:?}", vv);
         assert_eq!(
             vv,
@@ -97,7 +99,7 @@ mod tests {
         let s = include_str!("lang-tests/parse-okay-1.nix");
         let mut lexer = Lexer::new(s, Vec::new(), 0);
 
-        let vv = _collect(&mut lexer);
+        let vv = _collect(&mut lexer, false);
         println!("{:?}", vv);
         assert_eq!(
             vv,
@@ -124,14 +126,13 @@ mod tests {
         let m1 = glob::glob("./src/lang-tests/parse-okay-*.nix").expect("invalid glob pattern");
         let m2 = glob::glob("./src/lang-tests/eval-okay-*.nix").expect("invalid glob pattern");
         let m3 = m1.chain(m2);
-        // let m3 = glob::glob("src/lang-tests/eval-okay-backslash-newline-1.nix").expect("invalid glob pattern");
         for entry in m3 {
             match entry {
                 Ok(path) => {
                     println!("{:?}", path);
                     let s = std::fs::read_to_string(path).expect("could not read file");
                     let mut lexer = Lexer::new(&s, Vec::new(), 0);
-                    let vv = _collect(&mut lexer);
+                    let vv = _collect(&mut lexer, false);
                 }
                 Err(e) => {
                     panic!("not a valid file: {:?}", e);

@@ -63,12 +63,8 @@ pub enum Token {
 %field usize consumed
 %result_type Token
 
-[a-zA-Z_][a-zA-Z0-9_'\-]*  {
-    return Ok(Token::ID(self.yytext())); }
 [0-9]+  {
     return Ok(Token::INT(self.yytext().parse::<i64>().unwrap())); }
-[a-zA-Z0-9\._\-\+]*(/[a-zA-Z0-9\._\-\+]+)+/?  {
-    return Ok(Token::PATH(self.yytext()));}
 
 "\"" {
         self.state_stack.push(self.yystate());
@@ -82,7 +78,11 @@ pub enum Token {
     }
 "or"            return Ok(Token::OR_KW);
 ","             return Ok(Token::COMMA);
-"${"            return Ok(Token::DOLLAR_CURLY);
+"${" {
+        self.state_stack.push(self.yystate());
+        self.yybegin(Lexer::YYINITIAL);
+        return Ok(Token::DOLLAR_CURLY);
+    }
 if              return Ok(Token::IF);
 then            return Ok(Token::THEN);
 else            return Ok(Token::ELSE);
@@ -92,6 +92,10 @@ let             return Ok(Token::LET);
 in              return Ok(Token::IN);
 rec             return Ok(Token::REC);
 inherit         return Ok(Token::INHERIT);
+[a-zA-Z_][a-zA-Z0-9_'\-]*  {
+    return Ok(Token::ID(self.yytext())); }
+[a-zA-Z0-9\._\-\+]*(/[a-zA-Z0-9\._\-\+]+)+/?  {
+    return Ok(Token::PATH(self.yytext()));}
 "..."           return Ok(Token::ELLIPSIS);
 ","             return Ok(Token::COMMA);
 "."             return Ok(Token::DOT);
@@ -130,7 +134,8 @@ inherit         return Ok(Token::INHERIT);
         return Ok(Token::CLOSE_CURLY);
     }
 
-<STRING>([^\"$]|\$[^\"{]|\\.|\\\n)* { return Ok(Token::STRING_PART(self.yytext())); }
+<STRING>([^\"$]|\$[^\"{]|\\.|\\\n|\$\\.)*\$ { return Ok(Token::STRING_PART(self.yytext())); }
+<STRING>([^\"$]|\$[^\"{]|\\.|\\\n|\$\\.)+ { return Ok(Token::STRING_PART(self.yytext())); }
 <STRING>"\"" {
         let state = self.state_stack.pop().unwrap();
         self.yybegin(state);
@@ -162,12 +167,12 @@ inherit         return Ok(Token::INHERIT);
     }
 
 
-#.*$                  /* single-line comments */
+#.*$                       /* single-line comments */
 /\*([^\*]|\*+[^\*/])*\*+/  /* long comments */
 
-" "    /* Skip white space. This comment cannot be omitted. */
-\n     /* Skip white space. This comment cannot be omitted. */
-\t     /**/
+" "    /* comment needed, do not remove */
+\n     /* comment needed, do not remove */
+\t     /* comment needed, do not remove */
 %%
 
 pub fn error_state(&self) -> (usize, usize, usize) {
