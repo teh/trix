@@ -20,6 +20,18 @@ fn main() {
     let d = std::fs::read_to_string(&dest).unwrap();
     let d = d.replace("self.cmap[zz_input as usize]", "if zz_input < 0xff { self.cmap[zz_input as usize] } else { 0usize }");
     let d = d.replace("0x110000", "0x2029 + 1");
+    let d = d.replace(
+        "let idx = Lexer::ZZ_ROW",
+        "if zz_input == 0x0a { self.zz_lineno += 1; }\nlet idx = Lexer::ZZ_ROW",
+    );
+    let d = d.replace(
+        "zz_state: usize,",
+        "zz_lineno: usize,\nzz_state: usize,",
+    );
+    let d = d.replace(
+        "zz_state: 0,",
+        "zz_lineno: 0,\nzz_state: 0,",
+    );
     std::fs::write(&dest, d).unwrap();
     lalrpop::process_root().unwrap();
 }

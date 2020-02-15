@@ -1,9 +1,8 @@
-
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use gc_arena::{rootless_arena};
     use crate::lexer::nix_lexer::Lexer;
+    use gc_arena::rootless_arena;
+
     #[test]
     fn check_simple_expression() {
         rootless_arena(|mc| {
@@ -14,5 +13,42 @@ mod tests {
             let i = crate::expr_parser::exprParser::new().parse(mc, lex);
             println!("{:?}", *i.unwrap());
         });
+    }
+
+    #[test]
+    fn parse_lambda_head() {
+        let mut lexer = Lexer::new(
+            "f {}",
+            Vec::with_capacity(10),
+            0,
+        );
+        rootless_arena(|mc| match crate::expr_parser::exprParser::new().parse(mc, lexer) {
+            Ok(i) => println!("{:?}", *i),
+            Err(err) => panic!("invalid parse: {:?}", err),
+        });
+    }
+
+    #[test]
+    fn smoke_test_parsing() {
+        // lex all the files that we also expect to parse OK
+        let m1 = glob::glob("./src/lang-tests/parse-okay-*.nix").expect("invalid glob pattern");
+        let m2 = glob::glob("./src/lang-tests/eval-okay-*.nix").expect("invalid glob pattern");
+        let m3 = m1.chain(m2);
+        for entry in m3 {
+            match entry {
+                Ok(path) => {
+                    println!("{:?}", path);
+                    let s = std::fs::read_to_string(path).expect("could not read file");
+                    let mut lexer = Lexer::new(&s, Vec::with_capacity(10), 0);
+                    rootless_arena(|mc| match crate::expr_parser::exprParser::new().parse(mc, lexer) {
+                        Ok(i) => println!("{:?}", i),
+                        Err(err) => panic!("invalid parse: {:?}", err),
+                    });
+                }
+                Err(e) => {
+                    panic!("not a valid file: {:?}", e);
+                }
+            }
+        }
     }
 }

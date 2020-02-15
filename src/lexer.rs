@@ -5,7 +5,6 @@
 /// expression nesting is to make sure it's balanced.
 
 use crate::lexer::nix_lexer::{Error, Lexer, Token};
-use lalrpop_util;
 
 pub mod nix_lexer {
     include!(concat!(env!("OUT_DIR"), "/nix_lexer.rs"));
@@ -13,7 +12,7 @@ pub mod nix_lexer {
 
 #[derive(Debug)]
 pub enum LexicalError {
-    NotGood((usize, usize, usize)),
+    NotGood((usize, usize, usize, usize)),
 }
 
 impl<'input> Iterator for Lexer<'input> {
@@ -23,7 +22,8 @@ impl<'input> Iterator for Lexer<'input> {
         match self.yylex() {
             Ok(next_item) => {
                 let length = self.yylength();
-                let span = Ok((0, next_item, 1));
+                let (lineno, s, _, e) = self.error_state();
+                let span = Ok((lineno, next_item, e));
                 Some(span)
             }
             Err(Error::EOF) => None,
@@ -35,7 +35,6 @@ impl<'input> Iterator for Lexer<'input> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use glob::glob;
 
     #[test]
     fn check_simple_lex() {

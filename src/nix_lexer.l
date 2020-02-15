@@ -1,3 +1,5 @@
+#[allow(non_camel_case_types)]
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Token {
     ID(String),
@@ -192,6 +194,6 @@ inherit         return Ok(Token::INHERIT);
 \t     /* comment needed, do not remove */
 %%
 
-pub fn error_state(&self) -> (usize, usize, usize) {
-    (self.zz_marked_pos, self.zz_current_pos, self.zz_start_read)
+pub fn error_state(&self) -> (usize, usize, usize, usize) {
+    (self.zz_lineno, self.zz_start_read, self.zz_current_pos, self.zz_marked_pos)
 }

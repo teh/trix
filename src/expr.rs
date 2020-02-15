@@ -1,4 +1,4 @@
-use gc_arena::{make_arena, ArenaParameters, Collect, Gc, GcCell, MutationContext};
+use gc_arena::{make_arena, ArenaParameters, Collect, Gc, GcCell};
 use std::collections::HashMap;
 
 /// Placeholder for e.g. argument names in lambdas (x, y, i)

@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use crate::expr::{Cont, Env, Expr, ExprArena, ExprRoot, GcEnv, GcExpr, GcStack};
-use gc_arena::{make_arena, ArenaParameters, Collect, Gc, GcCell, MutationContext};
+use gc_arena::{ArenaParameters, Gc, GcCell, MutationContext};
 use std::cmp::Ordering;
 #[macro_use] extern crate lalrpop_util;
 
@@ -169,7 +169,7 @@ mod tests {
             let mut s = (root.root, root.env);
             // TODO - need function that is essentialy `eval` that runs until no
             // redex left.
-            for i in 0..10 {
+            for _i in 0..10 {
                 s = step(mc, s.0, s.1, black_hole, root.stack);
                 match *s.0 {
                     Expr::Int(v) => {
@@ -201,7 +201,7 @@ mod tests {
             let mut s = (root.root, root.env);
             // TODO - need function that is essentialy `eval` that runs until no
             // redex left.
-            for i in 0..10 {
+            for _i in 0..10 {
                 s = step(mc, s.0, s.1, black_hole, root.stack);
                 match *s.0 {
                     Expr::Int(v) => {
@@ -229,7 +229,7 @@ mod tests {
             };
             let black_hole = Gc::allocate(mc, Expr::Null());
             let mut s = (root.root, root.env);
-            for i in 0..10 {
+            for _i in 0..10 {
                 s = step(mc, s.0, s.1, black_hole, root.stack);
                 match *(s.0) {
                     Expr::String(ref s) => {
