@@ -39,30 +39,30 @@ mod tests {
 
     #[test]
     fn check_simple_lex() {
-        let mut lexer = Lexer::new("1", Vec::new(), 0);
+        let mut lexer = Lexer::new("1", Vec::with_capacity(10), 0);
         assert_eq!(lexer.yylex().unwrap(), Token::INT(1));
 
-        let mut lexer = Lexer::new("some_id", Vec::new(), 0);
+        let mut lexer = Lexer::new("some_id", Vec::with_capacity(10), 0);
         assert_eq!(lexer.yylex().unwrap(), Token::ID("some_id".to_string()));
 
-        let mut lexer = Lexer::new("//", Vec::new(), 0);
+        let mut lexer = Lexer::new("//", Vec::with_capacity(10), 0);
         assert_eq!(lexer.yylex().unwrap(), Token::UPDATE);
 
-        let mut lexer = Lexer::new("./path", Vec::new(), 0);
+        let mut lexer = Lexer::new("./path", Vec::with_capacity(10), 0);
         assert_eq!(lexer.yylex().unwrap(), Token::PATH("./path".to_string()));
 
-        let mut lexer = Lexer::new(r#""xx-s-xx""#, Vec::new(), 0);
+        let mut lexer = Lexer::new(r#""xx-s-xx""#, Vec::with_capacity(10), 0);
         lexer.yylex().unwrap();
         assert_eq!(lexer.yylex().unwrap(), Token::STRING_PART("xx-s-xx".to_string()));
 
-        let mut lexer = Lexer::new(r#""xx-s\\-xx""#, Vec::new(), 0);
+        let mut lexer = Lexer::new(r#""xx-s\\-xx""#, Vec::with_capacity(10), 0);
         lexer.yylex().unwrap();
         assert_eq!(lexer.yylex().unwrap(), Token::STRING_PART(r"xx-s\\-xx".to_string()));
         // TODO escape sequences, interpolation
     }
 
     fn _collect(lexer: &mut Lexer, trace: bool) -> Vec<Token> {
-        let mut ret = Vec::new();
+        let mut ret = Vec::with_capacity(10);
         loop {
             let x = lexer.yylex();
             if trace { println!("- {:?}", x); }
@@ -77,7 +77,7 @@ mod tests {
 
     #[test]
     fn check_nested() {
-        let mut lexer = Lexer::new(r#""x${1}x""#, Vec::new(), 0);
+        let mut lexer = Lexer::new(r#""x${1}x""#, Vec::with_capacity(10), 0);
         let vv = _collect(&mut lexer, false);
         println!("{:?}", vv);
         assert_eq!(
@@ -97,7 +97,7 @@ mod tests {
     #[test]
     fn check_attr_lambda() {
         let s = include_str!("lang-tests/parse-okay-1.nix");
-        let mut lexer = Lexer::new(s, Vec::new(), 0);
+        let mut lexer = Lexer::new(s, Vec::with_capacity(10), 0);
 
         let vv = _collect(&mut lexer, false);
         println!("{:?}", vv);
@@ -121,6 +121,32 @@ mod tests {
         );
     }
     #[test]
+    fn check_regex() {
+        let s = r#"splitFN = match "((.*)/)?([^/]*)\\.(nix|cc)"; "#;
+        let mut lexer = Lexer::new(s, Vec::with_capacity(10), 0);
+        let vv = _collect(&mut lexer, false);
+        assert_eq!(
+            vv,
+            vec![
+            Token::ID("splitFN".to_string()),
+            Token::ASSIGN,
+            Token::ID("match".to_string()),
+            Token::STRING_QUOTE,
+            Token::STRING_PART(r#"((.*)/)?([^/]*)\\.(nix|cc)"#.to_string()),
+            Token::STRING_QUOTE,
+            Token::SEMICOLON,
+        ]);
+    }
+
+    #[test]
+    fn check_standalone_dollar() {
+        let s = include_str!("lang-tests/eval-okay-string.nix");
+        let mut lexer = Lexer::new(s, Vec::with_capacity(10), 0);
+        let vv = _collect(&mut lexer, false);
+        assert_eq!(vv.len(), 82);
+    }
+
+    #[test]
     fn smoke_test_lexing() {
         // lex all the files that we also expect to parse OK
         let m1 = glob::glob("./src/lang-tests/parse-okay-*.nix").expect("invalid glob pattern");
@@ -131,7 +157,7 @@ mod tests {
                 Ok(path) => {
                     println!("{:?}", path);
                     let s = std::fs::read_to_string(path).expect("could not read file");
-                    let mut lexer = Lexer::new(&s, Vec::new(), 0);
+                    let mut lexer = Lexer::new(&s, Vec::with_capacity(10), 0);
                     let vv = _collect(&mut lexer, false);
                 }
                 Err(e) => {

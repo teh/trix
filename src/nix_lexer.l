@@ -134,8 +134,16 @@ inherit         return Ok(Token::INHERIT);
         return Ok(Token::CLOSE_CURLY);
     }
 
-<STRING>([^\"$]|\$[^\"{]|\\.|\\\n|\$\\.)*\$ { return Ok(Token::STRING_PART(self.yytext())); }
-<STRING>([^\"$]|\$[^\"{]|\\.|\\\n|\$\\.)+ { return Ok(Token::STRING_PART(self.yytext())); }
+<STRINGDOLLAR>"" {
+        let state = self.state_stack.pop().unwrap(); // double-pop
+        let state = self.state_stack.pop().unwrap();
+        self.yybegin(state);
+        return Ok(Token::STRING_QUOTE);
+    }
+
+<STRING>([^\"$]|\$[^\"{]|\\.|\\\n|\$\\.)* {
+        return Ok(Token::STRING_PART(self.yytext()));
+    }
 <STRING>"\"" {
         let state = self.state_stack.pop().unwrap();
         self.yybegin(state);
@@ -145,6 +153,15 @@ inherit         return Ok(Token::INHERIT);
         self.state_stack.push(self.yystate());
         self.yybegin(Lexer::YYINITIAL);
         return Ok(Token::DOLLAR_CURLY);
+    }
+<STRING>"$\"" {
+        // If a string ends in `$` we don't really have a way capture that
+        // with the regex to parse strings, instead we match the entire
+        // end in one go, and then use the helper-state STRINGDOLLAR to return
+        // more than one token.
+        self.state_stack.push(self.yystate());
+        self.yybegin(Lexer::STRINGDOLLAR);
+        return Ok(Token::STRING_PART("$".to_string()));
     }
 
 <INDENTEDSTRING>([^'$]|\$[^'{]|'[^'$])+ { return Ok(Token::STRING_PART(self.yytext())); }
