@@ -234,15 +234,15 @@ binds: Vec<(Vec<GcExpr<'gc>>, GcExpr<'gc>)> = {
         binds.push(bind);
         binds
     },
-    // <mut binds:binds> "inherit" <attrs:attrs> ";" => {
-    //     // todo, this is basically "x = x;" but expr in parent env.
-    //     binds.insert("inherit attrs", Gc::allocate(mc, Expr::InheritedVar("inherit attr")));
-    // },
-    //     binds
-    // <mut binds:binds> "inherit" "(" <expr:expr> ")" <attr_path:attrs> ";" => {
-    //     // Gc::allocate(mc, Expr::Select { expr, attr_path });
-    //     binds // TODO select from subexpression created above
-    // },
+    <mut binds:binds> "inherit" <attrs:attrs> ";" => {
+        // todo, this is basically "x = x;" but expr in parent env.
+        binds.insert("inherit attrs", Gc::allocate(mc, Expr::InheritedVar("inherit attr")));
+        binds
+    },
+    <mut binds:binds> "inherit" "(" <expr:expr> ")" <attr_path:attrs> ";" => {
+        // Gc::allocate(mc, Expr::Select { expr, attr_path });
+        binds // TODO select from subexpression created above
+    },
     // => HashMap::new(),
 }
 
