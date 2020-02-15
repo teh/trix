@@ -58,7 +58,7 @@ pub expr_function: GcExpr<'gc> = {
 pub expr_if: GcExpr<'gc> = {
     "if" <if_expr:expr> "then" <then_expr:expr> "else" <else_expr:expr> =>
         { Gc::allocate(mc, Expr::IfThenElse { if_expr, then_expr, else_expr }) },
-    expr_op_p13,
+    expr_op_p14,
 }
 
 // -----------------------------------------------------------------------
@@ -165,12 +165,13 @@ expr_simple: GcExpr<'gc> = {
         Gc::allocate(mc, Expr::Var(id))
     },
     <int:INT> => { Gc::allocate(mc, Expr::Int(int)) },
-    <parts:string_parts > => {
+    STR_QUOTE <parts:string_parts> STR_QUOTE => {
         Gc::allocate(mc, Expr::InterpolatedString(parts))
     },
-    // "''" <parts:ind_string_parts> "''" => {
-    //     Gc::allocate(mc, Expr::String(parts))
-    // }, // TODO strip indendtation
+    INDENTED_STRING_QUOTE <parts:indented_string_parts> INDENTED_STRING_QUOTE => {
+        // TODO strip indentation
+        Gc::allocate(mc, Expr::InterpolatedString(parts))
+    },
     <path:PATH> => {
         Gc::allocate(mc, Expr::Path(path))
     },
@@ -200,18 +201,30 @@ expr_simple: GcExpr<'gc> = {
 // contents: &str = r#"([^\$"\\]|\$[^\{"\\])*"#;
 
 string_parts: Vec<GcExpr<'gc>> = {
-    STR_QUOTE <part:STRING_PART> STR_QUOTE => {
+    <mut parts:string_parts> <part:STRING_PART> => {
         // Can probably skip the intermediate Vec allocation here
-        vec![Gc::allocate(mc, Expr::String(part))]
+        parts.push(Gc::allocate(mc, Expr::String(part)));
+        parts
     },
-    STR_QUOTE <left_part:STRING_PART> "${" <expr:expr> <right_part:STRING_PART> STR_QUOTE => {
-        vec![
-            Gc::allocate(mc, Expr::String(left_part)),
-            Gc::allocate(mc, Expr::String(right_part)),
-        ]
+    <mut parts:string_parts> "${" <expr:expr> "}" => {
+        parts.push(expr);
+        parts
     },
+    => { Vec::new() },
 }
 
+indented_string_parts: Vec<GcExpr<'gc>> = {
+    <mut parts:indented_string_parts> <part:STRING_PART> => {
+        // Can probably skip the intermediate Vec allocation here
+        parts.push(Gc::allocate(mc, Expr::String(part)));
+        parts
+    },
+    <mut parts:indented_string_parts> "${" <expr:expr> "}" => {
+        parts.push(expr);
+        parts
+    },
+    => { Vec::new() },
+}
 
 binds: Vec<(Vec<GcExpr<'gc>>, GcExpr<'gc>)> = {
     <bind:bind> => {
@@ -273,7 +286,7 @@ attr: GcExpr<'gc> = {
 //   | OR_KW { $$ = "or"; } TODO I really don't understand where the or keyword is happening...
 
 string_attr: GcExpr<'gc> = {
-    <parts:string_parts> => {
+    STR_QUOTE <parts:string_parts> STR_QUOTE => {
         Gc::allocate(mc, Expr::InterpolatedString(parts))
         // I'm slightly confused about what can be used as a string_attr, (TODO)
     },
@@ -326,6 +339,7 @@ extern {
         ","  => Token::COMMA,
         "${" => Token::DOLLAR_CURLY,
         STR_QUOTE => Token::STRING_QUOTE,
+        INDENTED_STRING_QUOTE => Token::INDENTED_STRING_QUOTE,
 
         "if" => Token::IF,
         "then" => Token::THEN,
