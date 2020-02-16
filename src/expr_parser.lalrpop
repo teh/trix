@@ -65,8 +65,16 @@ pub expr_if: GcExpr<'gc> = {
 // operator precedence
 // https://nixos.org/nix/manual/#sec-language-operators
 pub expr_op_p1: GcExpr<'gc> = {
-    <left:expr_op_p1> "." <right:expr_simple> =>
-        { Gc::allocate(mc, Expr::Select { expr: left, attr_path: right }) },
+    <left:expr_simple> "." <right:attrpath> =>
+        { Gc::allocate(mc, Expr::Select { expr: left, attr_path: right })
+    },
+    <left:expr_simple> "." <right:attrpath> OR_KW <or:expr_op_p1> => {
+        // TODO - have an OR_KW select expression type
+        Gc::allocate(mc, Expr::Select { expr: left, attr_path: right })
+    },
+    <left:expr_simple> OR_KW => {
+        Gc::allocate(mc, Expr::Var("or".to_string()))
+    },
     expr_simple
 }
 pub expr_op_p2: GcExpr<'gc> = {
@@ -160,7 +168,12 @@ expr_simple: GcExpr<'gc> = {
     "{" <attrs:binds> "}" => {
         Gc::allocate(mc, Expr::Attrs { recursive: false, attrs })
     },
-
+    "let" "{" <attrs:binds> "}" => {
+        Gc::allocate(mc, Expr::Select {
+            expr: Gc::allocate(mc, Expr::Attrs { recursive: false, attrs }),
+            attr_path: vec![Gc::allocate(mc, Expr::String("body".to_string()))],
+        })
+    },
     <id:ID> => {
         Gc::allocate(mc, Expr::Var(id))
     },
@@ -178,12 +191,6 @@ expr_simple: GcExpr<'gc> = {
     "(" <expr:expr> ")" => {
         expr
     },
-    // TODO - let body doesn't seem to happen at all in <nixpkgs>?
-    // Let expressions `let {..., body = ...}" are just desugared
-    // into `(rec {..., body = ...}).body".
-    // "let" "{" <expr:binds> "}" =>
-    //     { // TODO make binds recursive here? Seems to me they should always return recursive?
-    //         Gc::allocate(mc, Expr::Select(expr, attr_path: Symbol("body")) }
     "rec" "{" <attrs:binds> "}" => {
         Gc::allocate(mc, Expr::Attrs { recursive: true, attrs })
     }, // replace attrs?
@@ -236,14 +243,13 @@ binds: Vec<(Vec<GcExpr<'gc>>, GcExpr<'gc>)> = {
     },
     <mut binds:binds> "inherit" <attrs:attrs> ";" => {
         // todo, this is basically "x = x;" but expr in parent env.
-        binds.insert("inherit attrs", Gc::allocate(mc, Expr::InheritedVar("inherit attr")));
         binds
     },
     <mut binds:binds> "inherit" "(" <expr:expr> ")" <attr_path:attrs> ";" => {
         // Gc::allocate(mc, Expr::Select { expr, attr_path });
+        // TODO - rewrite into a selection on expr
         binds // TODO select from subexpression created above
     },
-    // => HashMap::new(),
 }
 
 bind: (Vec<GcExpr<'gc>>, GcExpr<'gc>) = {
@@ -282,6 +288,7 @@ attrpath: Vec<GcExpr<'gc>> = {
 
 attr: GcExpr<'gc> = {
     <id:ID> => Gc::allocate(mc, Expr::Var(id)),
+    OR_KW => Gc::allocate(mc, Expr::Var("or".to_string())),
 }
 //   | OR_KW { $$ = "or"; } TODO I really don't understand where the or keyword is happening...
 

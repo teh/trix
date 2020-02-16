@@ -7,7 +7,7 @@ let
   bs = { f-o-o.bar = "foo"; };
 
   or = x: y: x || y;
-  
+
 in
   [ as.x.y.z
     as.foo or "foo"

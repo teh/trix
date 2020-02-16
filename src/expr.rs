@@ -56,7 +56,7 @@ pub enum Expr<'gc> {
     },
     Select {
         expr: GcExpr<'gc>,
-        attr_path: GcExpr<'gc>,
+        attr_path: Vec<GcExpr<'gc>>,
     },
     SelectOr {
         expr: GcExpr<'gc>,
