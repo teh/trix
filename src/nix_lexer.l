@@ -68,6 +68,9 @@ pub enum Token {
 [0-9]+  {
     return Ok(Token::INT(self.yytext().parse::<i64>().unwrap())); }
 
+(([1-9][0-9]*\.[0-9]*)|(0?\.[0-9]+))([Ee][+\-]?[0-9]+)? {
+    return Ok(Token::FLOAT(self.yytext())); }
+
 "\"" {
         self.state_stack.push(self.yystate());
         self.yybegin(Lexer::STRING);

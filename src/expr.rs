@@ -10,7 +10,9 @@ pub type Symbol = String;
 pub enum Expr<'gc> {
     Null(),
     Int(i64),
-    Float(f64),
+
+    // TODO decide how to handle floats
+    Float(String),
     Bool(bool),
     Var(Symbol),
 

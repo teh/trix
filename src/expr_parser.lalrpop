@@ -177,6 +177,7 @@ expr_simple: GcExpr<'gc> = {
         Gc::allocate(mc, Expr::Var(id))
     },
     <int:INT> => { Gc::allocate(mc, Expr::Int(int)) },
+    <float:FLOAT> => { Gc::allocate(mc, Expr::Float(float)) },
     STR_QUOTE <parts:string_parts> STR_QUOTE => {
         Gc::allocate(mc, Expr::InterpolatedString(parts))
     },
