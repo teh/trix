@@ -147,7 +147,7 @@ mod tests {
 
     #[test]
     fn check_ad_hoc() {
-        let s = include_str!("lang-tests/parse-okay-regression-751.nix");
+        let s = include_str!("lang-tests/eval-okay-attrs5.nix");
         let mut lexer = Lexer::new(s, Vec::with_capacity(10), 0);
         let vv = _collect(&mut lexer, true);
     }

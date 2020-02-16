@@ -16,6 +16,32 @@ mod tests {
     }
 
     #[test]
+    fn parse_nested_lambda() {
+        let mut lexer = Lexer::new(
+            "let f = x: y: x || y; in f",
+            Vec::with_capacity(10),
+            0,
+        );
+        rootless_arena(|mc| match crate::expr_parser::exprParser::new().parse(mc, lexer) {
+            Ok(i) => println!("{:?}", *i),
+            Err(err) => panic!("invalid parse: {:?}", err),
+        });
+    }
+
+    #[test]
+    fn parse_autoargs() {
+        let mut lexer = Lexer::new(
+            "let x = 1; in { a ? 1, b ? 2}: a + b",
+            Vec::with_capacity(10),
+            0,
+        );
+        rootless_arena(|mc| match crate::expr_parser::exprParser::new().parse(mc, lexer) {
+            Ok(i) => println!("{:?}", *i),
+            Err(err) => panic!("invalid parse: {:?}", err),
+        });
+    }
+
+    #[test]
     fn parse_lambda_head() {
         let mut lexer = Lexer::new(
             "f {}",
