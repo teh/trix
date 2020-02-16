@@ -56,15 +56,13 @@ pub formals_or_binds: GcExpr<'gc> = {
     "{" <formals:formals> "," "..." "}" "@" <name:ID> ":" <body:expr> => {
         Gc::allocate(mc, Expr::Lambda { arg: None, formals: (formals, true), body })
     },
-
-
     lambda_def,
 }
 
 pub lambda_def: GcExpr<'gc> = {
-    <arg:ID> ":" <body:lambda_def> => {
+    <arg:ID> ":" <body:expr> => {
          Gc::allocate(mc, Expr::Lambda { arg: Some(arg), body, formals: (vec![], false) }) },
-    <arg:ID> "@" "{" <formals:formals> "}" ":" <body:lambda_def> => {
+    <arg:ID> "@" "{" <formals:formals> "}" ":" <body:expr> => {
         Gc::allocate(mc, Expr::Lambda { arg: Some(arg), formals: (formals, false), body }) },
     expr_function,
 }
@@ -211,6 +209,13 @@ expr_simple: GcExpr<'gc> = {
         Gc::allocate(mc, Expr::InterpolatedString(parts))
     },
     <path:PATH> => {
+        Gc::allocate(mc, Expr::Path(path))
+    },
+    <path:SEARCH_PATH> => {
+        Gc::allocate(mc, Expr::Path(path))
+    },
+    <path:HOME_PATH> => {
+        // TODO expand home path
         Gc::allocate(mc, Expr::Path(path))
     },
     "(" <expr:expr> ")" => {
@@ -374,6 +379,8 @@ extern {
         INT => Token::INT(<i64>),
         FLOAT =>Token::FLOAT(<String>),
         PATH => Token::PATH(<String>),
+        SEARCH_PATH => Token::SEARCH_PATH(<String>),
+        HOME_PATH => Token::HOME_PATH(<String>),
         STRING_PART => Token::STRING_PART(<String>),
 
         OR_KW => Token::OR_KW,

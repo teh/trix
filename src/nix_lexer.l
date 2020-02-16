@@ -10,6 +10,8 @@ pub enum Token {
     INDENTED_STRING_QUOTE,
     DOLLAR_CURLY,
     PATH(String),
+    SEARCH_PATH(String),
+    HOME_PATH(String),
     // keywords
     IF,
     THEN,
@@ -101,6 +103,11 @@ inherit         return Ok(Token::INHERIT);
     return Ok(Token::ID(self.yytext())); }
 [a-zA-Z0-9\._\-\+]*(/[a-zA-Z0-9\._\-\+]+)+/?  {
     return Ok(Token::PATH(self.yytext()));}
+~(/[a-zA-Z0-9._\-+]+)+/? {
+    return Ok(Token::HOME_PATH(self.yytext()));}
+"<"[a-zA-Z0-9._\-+]+(/[a-zA-Z0-9._\-+]+)*> {
+    return Ok(Token::SEARCH_PATH(self.yytext()));}
+
 "..."           return Ok(Token::ELLIPSIS);
 ","             return Ok(Token::COMMA);
 "."             return Ok(Token::DOT);
