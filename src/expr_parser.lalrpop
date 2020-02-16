@@ -20,18 +20,44 @@ pub expr: GcExpr<'gc> = {
 // Things can get quite wild:
 // (({ a, b ? {}: 1 }: b){ a = 10; }){}
 pub formals_or_binds: GcExpr<'gc> = {
-    "{" "}"  ":" <body:lambda_def> => {
+    "{" "}"  ":" <body:expr> => {
         Gc::allocate(mc, Expr::Lambda { arg: None, formals: (vec![], false), body })
     },
-    "{" "..." "}"  ":" <body:lambda_def> => {
+    "{" "..." "}"  ":" <body:expr> => {
         Gc::allocate(mc, Expr::Lambda { arg: None, formals: (vec![], true), body })
     },
-    "{" <formals:formals> "}"  ":" <body:lambda_def> => {
+    "{" <formals:formals> "}" ":" <body:expr> => {
         Gc::allocate(mc, Expr::Lambda { arg: None, formals: (formals, false), body })
     },
-    "{" <formals:formals> "," "..." "}"  ":" <body:lambda_def> => {
+    // Note that we need to encode the trailing comma here due to empty formals
+    // behing handled elsewhere. Could probably move that into the formals
+    // definition.
+    "{" <formals:formals> "," "}" ":" <body:expr> => {
+        Gc::allocate(mc, Expr::Lambda { arg: None, formals: (formals, false), body })
+    },
+    "{" <formals:formals> "," "..." "}"  ":" <body:expr> => {
         Gc::allocate(mc, Expr::Lambda { arg: None, formals: (formals, true), body })
     },
+
+    // duplication for @-name (urg)
+    // TODO put name somewhere
+    "{" "..." "}" "@" <name:ID> ":" <body:expr> => {
+        Gc::allocate(mc, Expr::Lambda { arg: None, formals: (vec![], true), body })
+    },
+    "{" <formals:formals> "}" "@" <name:ID> ":" <body:expr> => {
+        Gc::allocate(mc, Expr::Lambda { arg: None, formals: (formals, false), body })
+    },
+    // Note that we need to encode the trailing comma here due to empty formals
+    // behing handled elsewhere. Could probably move that into the formals
+    // definition.
+    "{" <formals:formals> "," "}" "@" <name:ID> ":" <body:expr> => {
+        Gc::allocate(mc, Expr::Lambda { arg: None, formals: (formals, false), body })
+    },
+    "{" <formals:formals> "," "..." "}" "@" <name:ID> ":" <body:expr> => {
+        Gc::allocate(mc, Expr::Lambda { arg: None, formals: (formals, true), body })
+    },
+
+
     lambda_def,
 }
 
@@ -39,7 +65,6 @@ pub lambda_def: GcExpr<'gc> = {
     <arg:ID> ":" <body:lambda_def> => {
          Gc::allocate(mc, Expr::Lambda { arg: Some(arg), body, formals: (vec![], false) }) },
     <arg:ID> "@" "{" <formals:formals> "}" ":" <body:lambda_def> => {
-        // TODO handle ... or move the @ handling down
         Gc::allocate(mc, Expr::Lambda { arg: Some(arg), formals: (formals, false), body }) },
     expr_function,
 }
@@ -237,15 +262,25 @@ binds: Vec<(Vec<GcExpr<'gc>>, GcExpr<'gc>)> = {
     <bind:bind> => {
         vec![bind]
     },
+    // I can't seem to write
+    INHERIT <attrs:attrs> ";" => {
+        // todo, this is basically "x = x;" but expr in parent env.
+        vec![]
+    },
+    INHERIT "(" <expr:expr> ")" <attr_path:attrs> ";" => {
+        // Gc::allocate(mc, Expr::Select { expr, attr_path });
+        // TODO - rewrite into a selection on expr
+        vec![] // TODO select from subexpression created above
+    },
     <mut binds:binds> <bind:bind> => {
         binds.push(bind);
         binds
     },
-    <mut binds:binds> "inherit" <attrs:attrs> ";" => {
+    <mut binds:binds> INHERIT <attrs:attrs> ";" => {
         // todo, this is basically "x = x;" but expr in parent env.
         binds
     },
-    <mut binds:binds> "inherit" "(" <expr:expr> ")" <attr_path:attrs> ";" => {
+    <mut binds:binds> INHERIT "(" <expr:expr> ")" <attr_path:attrs> ";" => {
         // Gc::allocate(mc, Expr::Select { expr, attr_path });
         // TODO - rewrite into a selection on expr
         binds // TODO select from subexpression created above
@@ -253,7 +288,6 @@ binds: Vec<(Vec<GcExpr<'gc>>, GcExpr<'gc>)> = {
 }
 
 bind: (Vec<GcExpr<'gc>>, GcExpr<'gc>) = {
-    // TODO - inherit handling
     <attr_path:attrpath> "=" <expr:expr> ";" => {
         (attr_path, expr)
     }
@@ -356,7 +390,7 @@ extern {
         "let" => Token::LET,
         "in" => Token::IN,
         "rec" => Token::REC,
-        "inherit" => Token::INHERIT,
+        INHERIT => Token::INHERIT,
         "..." => Token::ELLIPSIS,
 
         "," => Token::COMMA,

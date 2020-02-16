@@ -55,6 +55,19 @@ mod tests {
     }
 
     #[test]
+    fn parse_inherit() {
+        let mut lexer = Lexer::new(
+            "{ inherit pkgs; }",
+            Vec::with_capacity(10),
+            0,
+        );
+        rootless_arena(|mc| match crate::expr_parser::exprParser::new().parse(mc, lexer) {
+            Ok(i) => println!("{:?}", *i),
+            Err(err) => panic!("invalid parse: {:?}", err),
+        });
+    }
+
+    #[test]
     fn smoke_test_parsing() {
         // lex all the files that we also expect to parse OK
         let m1 = glob::glob("./src/lang-tests/parse-okay-*.nix").expect("invalid glob pattern");
