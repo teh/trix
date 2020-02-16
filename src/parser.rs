@@ -2,6 +2,7 @@
 mod tests {
     use crate::lexer::nix_lexer::Lexer;
     use gc_arena::rootless_arena;
+    use crate::expr_parser::exprParser;
 
     #[test]
     fn check_simple_expression() {
