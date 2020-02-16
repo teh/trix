@@ -2,16 +2,15 @@
 use crate::expr::{Cont, Env, Expr, ExprArena, ExprRoot, GcEnv, GcExpr, GcStack};
 use gc_arena::{ArenaParameters, Gc, GcCell, MutationContext};
 use std::cmp::Ordering;
-#[macro_use] extern crate lalrpop_util;
-
+#[macro_use]
+extern crate lalrpop_util;
 
 pub mod expr;
-pub mod parser;
 pub mod lexer;
+pub mod parser;
 
 lalrpop_mod!(pub expr_parser);
-use crate::expr_parser::{exprParser};
-
+use crate::expr_parser::exprParser;
 
 fn step<'gc>(
     mc: MutationContext<'gc, '_>,
@@ -139,6 +138,7 @@ fn step<'gc>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::lexer::nix_lexer::Lexer;
     use gc_arena::rootless_arena;
 
     #[test]
@@ -239,6 +239,34 @@ mod tests {
                     _ => (),
                 }
             }
+        });
+    }
+
+    #[test]
+    fn eval_parsed_simple() {
+        let mut lexer = Lexer::new("1 + 1", Vec::with_capacity(10), 0);
+        rootless_arena(|mc| match crate::expr_parser::exprParser::new().parse(mc, lexer) {
+            Ok(root_expr) => {
+                // TODO really need eval for the following bit of code
+                let root = ExprRoot {
+                    root: root_expr,
+                    stack: GcCell::allocate(mc, Vec::new()),
+                    env: Gc::allocate(mc, Env::new_root()),
+                };
+                let black_hole = Gc::allocate(mc, Expr::Null());
+                let mut s = (root.root, root.env);
+                for _i in 0..10 {
+                    s = step(mc, s.0, s.1, black_hole, root.stack);
+                    match *(s.0) {
+                        Expr::String(ref s) => {
+                            assert_eq!(s, "thunk");
+                            break;
+                        }
+                        _ => (),
+                    }
+                }
+            }
+            Err(err) => panic!("invalid parse: {:?}", err),
         });
     }
 }
