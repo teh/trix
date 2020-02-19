@@ -120,15 +120,18 @@ pub expr_op_p5: GcExpr<'gc> = {
     expr_op_p4
 }
 pub expr_op_p6: GcExpr<'gc> = {
-    <left:expr_op_p6> "*" <right:expr_op_p5> =>
-        { Gc::allocate(mc, Expr::BinaryOp { name: "*",  left, right }) },
+    <left:expr_op_p6> "*" <right:expr_op_p5> => {
+        Gc::allocate(mc, Expr::App {
+            arity: 2,
+            f: Gc::allocate(mc, Expr::PrimOp { name: "*",  arity: 2 }),
+            args: vec![left, right],
+        })
+    },
     <left:expr_op_p6> "/" <right:expr_op_p5> =>
         { Gc::allocate(mc, Expr::BinaryOp { name: "/",  left, right }) },
     expr_op_p5
 }
 pub expr_op_p7: GcExpr<'gc> = {
-    // <left:expr_op> "+" <right:expr_op> =>
-    //     { Gc::allocate(mc, Expr::BinaryOp { name: "string+",  left, right }) }, TODO string concat has higher precedence
     <left:expr_op_p7> "+" <right:expr_op_p6> =>
         { Gc::allocate(mc, Expr::BinaryOp { name: "+",  left, right }) },
     <left:expr_op_p7> "-" <right:expr_op_p6> =>

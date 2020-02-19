@@ -1,5 +1,5 @@
-use gc_arena::{make_arena, ArenaParameters, Collect, Gc, GcCell, MutationContext};
 use crate::expr::{Cont, Env, Expr, ExprArena, ExprRoot, GcEnv, GcExpr, GcStack};
+use gc_arena::{make_arena, ArenaParameters, Collect, Gc, GcCell, MutationContext};
 use std::cmp::Ordering;
 
 /// The step function is quite large. I might split out some of the braches into
@@ -16,7 +16,46 @@ fn step<'gc>(
     println!("   s {:?}", stack.read());
 
     let stack_top = stack.read().last().cloned();
+
     match (&*expr, stack_top) {
+        // if the stack-top is a Cont::ForceAppCont _and_ the expr is a value then
+        // we need to remember that value (i.e. pop + push new ForceAppCont), and
+        // return the next un-evaluated value in the ForceAppCont list. Once all
+        // arguments have been force-evaluated we return a new App with the forced
+        // values as arguments.
+        (
+            e,
+            Some(Cont::ForceAppCont {
+                f,
+                mut unforced_args,
+                mut forced_args,
+            }),
+        ) if e.is_value() => {
+            stack.write(mc).pop();
+            let popped = unforced_args.pop().unwrap();
+            forced_args.push(expr);
+            if unforced_args.len() > 0 {
+                let cont = Cont::ForceAppCont {
+                    f: f,
+                    unforced_args: unforced_args.clone(),
+                    forced_args: forced_args,
+                };
+                stack.write(mc).push(cont);
+                return (*unforced_args.last().unwrap(), env);
+            } else {
+                return (
+                    Gc::allocate(
+                        mc,
+                        Expr::App {
+                            f: f,
+                            arity: forced_args.len(),
+                            args: forced_args,
+                        },
+                    ),
+                    env,
+                );
+            }
+        }
         // (Expr::Let { bindings, in_ }, _) => {
         // create chained environment, return (env, in_); any expression in
         // a let binding becomes a thunk with an update, when stepping into
@@ -46,17 +85,31 @@ fn step<'gc>(
                         }
                         Ordering::Equal => {
                             // rule EXACT
-
-                            // TODO what if args not evaluated yet? Probably
-                            // need to push a ForceEvalCont and return the first
-                            // arg to be evaluated. When that returns
-                            // ForceEvalCont pops of one Arg, force evals the
-                            // next one etc until done, then re-does the App.
                             let l = (*args)[0];
                             let r = (*args)[1];
+
+                            // for arg in args.iter() {
+                            //     println!("arg: {:?}, is_value: {}", **arg, arg.is_value());
+                            // }
+
+                            if !args.iter().all(|a| a.is_value()) {
+                                let unforced_args = (*args).clone().into_iter().rev().collect();
+                                let cont = Cont::ForceAppCont {
+                                    f: *f,
+                                    unforced_args: unforced_args,
+                                    forced_args: vec![],
+                                };
+                                stack.write(mc).push(cont);
+                                return (l, env);
+                            }
+
                             match (name, &*l, &*r) {
-                                ("plus", Expr::Int(left), Expr::Int(right)) => {
+                                ("+", Expr::Int(left), Expr::Int(right)) => {
                                     let expr2 = Gc::allocate(mc, Expr::Int(left + right));
+                                    (expr2, env)
+                                }
+                                ("*", Expr::Int(left), Expr::Int(right)) => {
+                                    let expr2 = Gc::allocate(mc, Expr::Int(left * right));
                                     (expr2, env)
                                 }
                                 _ => unreachable!("invalid op {}/{}", name, arity),
@@ -134,11 +187,13 @@ pub fn eval<'gc>(mc: MutationContext<'gc, '_>, expr: GcExpr<'gc>, max_steps: usi
         stack: GcCell::allocate(mc, Vec::new()),
         env: Gc::allocate(mc, Env::new_root()),
     };
+    // TODO I'm not 100% sure how pointer comparisons work after gc, so the
+    // following use of black_hole might not work at all.
     let black_hole = Gc::allocate(mc, Expr::Null());
     let mut s = (root.root, root.env);
     for _i in 0..max_steps {
         s = step(mc, s.0, s.1, black_hole, root.stack);
-        if (s.0).is_value() {
+        if (s.0).is_value() && root.stack.read().len() == 0 {
             return s.0;
         }
     }
@@ -163,7 +218,7 @@ mod tests {
                     f: Gc::allocate(
                         mc,
                         Expr::App {
-                            f: Gc::allocate(mc, Expr::PrimOp { name: "plus", arity: 2 }),
+                            f: Gc::allocate(mc, Expr::PrimOp { name: "+", arity: 2 }),
                             arity: 1,
                             args: vec![Gc::allocate(mc, Expr::Int(2))],
                         },
@@ -199,7 +254,7 @@ mod tests {
             root: Gc::allocate(
                 mc,
                 Expr::App {
-                    f: Gc::allocate(mc, Expr::PrimOp { name: "plus", arity: 2 }),
+                    f: Gc::allocate(mc, Expr::PrimOp { name: "+", arity: 2 }),
                     arity: 2,
                     args: vec![Gc::allocate(mc, Expr::Int(2)), Gc::allocate(mc, Expr::Int(1))],
                 },
@@ -254,10 +309,11 @@ mod tests {
     }
     #[test]
     fn check_simple_eval() {
-        let mut lexer = Lexer::new("1 + 1", Vec::with_capacity(10), 0);
+        let lexer = Lexer::new("2 * (3 * 4)", Vec::with_capacity(10), 0);
         rootless_arena(|mc| {
-                let root_expr = crate::expr_parser::exprParser::new().parse(mc, lexer).unwrap();
-            eval(mc, root_expr, 100);
+            let root_expr = crate::expr_parser::exprParser::new().parse(mc, lexer).unwrap();
+            let e = eval(mc, root_expr, 12);
+            println!("eval: {:?}", *e);
         })
     }
 }

@@ -125,8 +125,7 @@ impl<'gc> Expr<'gc> {
             Expr::Path(_) => true,
             Expr::List(_) => true,
             Expr::Attrs  { .. } => true,
-            Expr::App  { .. } => true,
-            Expr::Pap  { .. } => true,
+            Expr::Pap { .. } => true,
             _ => false,
         }
     }
@@ -147,9 +146,10 @@ pub enum Cont<'gc> {
         env: GcEnv<'gc>,
         arity: usize,
     },
-    ForceEvalCont {
-        args: Vec<GcExpr<'gc>>,
-        arity: usize,
+    ForceAppCont {
+        f: GcExpr<'gc>, /// lambda to apply to after all args have been forced
+        unforced_args: Vec<GcExpr<'gc>>, // we consume unforced and append to forced args.
+        forced_args: Vec<GcExpr<'gc>>,
     },
 }
 
