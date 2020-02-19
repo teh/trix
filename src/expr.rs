@@ -111,7 +111,26 @@ impl<'gc> PartialEq for Expr<'gc> {
 
 impl<'gc> Eq for Expr<'gc> {}
 
-impl<'gc> Expr<'gc> {}
+impl<'gc> Expr<'gc> {
+    /// Values cannot be evaluated any further. This matters when we force
+    /// arguments e.g. for binary ops, but also for the actual evaluation.
+    pub fn is_value(&self) -> bool {
+        match self {
+            Expr::Null() => true,
+            Expr::Int(_) => true,
+            Expr::Float(_) => true,
+            Expr::Bool(_) => true,
+            Expr::String(_) => true,
+            Expr::InterpolatedString(_) => true,
+            Expr::Path(_) => true,
+            Expr::List(_) => true,
+            Expr::Attrs  { .. } => true,
+            Expr::App  { .. } => true,
+            Expr::Pap  { .. } => true,
+            _ => false,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Collect)]
 #[collect(no_drop)]

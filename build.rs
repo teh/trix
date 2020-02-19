@@ -13,13 +13,8 @@ fn main() {
         eprintln!("{:?}", e);
         std::process::exit(1);
     }
-    // The lexer allocates a 1MB lookup table on each iteration which is quite
-    // slow. The following is a dumb hack which reduces the allocation to just
-    // enough to keep track of newlines and maps the rest to 0.
-    // See https://github.com/pfnet/rflex/issues/11
+    // track line numbers
     let d = std::fs::read_to_string(&dest).unwrap();
-    let d = d.replace("self.cmap[zz_input as usize]", "if zz_input < 0xff { self.cmap[zz_input as usize] } else { 0usize }");
-    let d = d.replace("0x110000", "0x2029 + 1");
     let d = d.replace(
         "let idx = Lexer::ZZ_ROW",
         "if zz_input == 0x0a { self.zz_lineno += 1; }\nlet idx = Lexer::ZZ_ROW",

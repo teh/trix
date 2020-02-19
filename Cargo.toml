@@ -13,7 +13,7 @@ gc-arena = "0.2.0"
 lalrpop-util = "0.17.2"
 
 [build-dependencies]
-rflex = "0.5.0"
+rflex = "0.6.0"
 lalrpop = "0.17.2"
 
 [dev-dependencies]

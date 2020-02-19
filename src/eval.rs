@@ -1,7 +1,9 @@
+use gc_arena::{make_arena, ArenaParameters, Collect, Gc, GcCell, MutationContext};
 use crate::expr::{Cont, Env, Expr, ExprArena, ExprRoot, GcEnv, GcExpr, GcStack};
 use std::cmp::Ordering;
 
-
+/// The step function is quite large. I might split out some of the braches into
+/// their own functions.
 fn step<'gc>(
     mc: MutationContext<'gc, '_>,
     expr: GcExpr<'gc>,
@@ -125,12 +127,30 @@ fn step<'gc>(
     }
 }
 
+/// eval `expr` to a value (e.g. string, float, int, lambda, ...)
+pub fn eval<'gc>(mc: MutationContext<'gc, '_>, expr: GcExpr<'gc>, max_steps: usize) -> GcExpr<'gc> {
+    let root = ExprRoot {
+        root: expr,
+        stack: GcCell::allocate(mc, Vec::new()),
+        env: Gc::allocate(mc, Env::new_root()),
+    };
+    let black_hole = Gc::allocate(mc, Expr::Null());
+    let mut s = (root.root, root.env);
+    for _i in 0..max_steps {
+        s = step(mc, s.0, s.1, black_hole, root.stack);
+        if (s.0).is_value() {
+            return s.0;
+        }
+    }
+    unreachable!("{:?} did not evaluate in {} steps", expr, max_steps)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::expr_parser::exprParser;
     use crate::lexer::nix_lexer::Lexer;
     use gc_arena::rootless_arena;
-    use crate::expr_parser::exprParser;
 
     #[test]
     fn check_pap_primop() {
@@ -232,32 +252,12 @@ mod tests {
             }
         });
     }
-
     #[test]
-    fn eval_parsed_simple() {
+    fn check_simple_eval() {
         let mut lexer = Lexer::new("1 + 1", Vec::with_capacity(10), 0);
-        rootless_arena(|mc| match crate::expr_parser::exprParser::new().parse(mc, lexer) {
-            Ok(root_expr) => {
-                // TODO really need eval for the following bit of code
-                let root = ExprRoot {
-                    root: root_expr,
-                    stack: GcCell::allocate(mc, Vec::new()),
-                    env: Gc::allocate(mc, Env::new_root()),
-                };
-                let black_hole = Gc::allocate(mc, Expr::Null());
-                let mut s = (root.root, root.env);
-                for _i in 0..10 {
-                    s = step(mc, s.0, s.1, black_hole, root.stack);
-                    match *(s.0) {
-                        Expr::String(ref s) => {
-                            assert_eq!(s, "thunk");
-                            break;
-                        }
-                        _ => (),
-                    }
-                }
-            }
-            Err(err) => panic!("invalid parse: {:?}", err),
-        });
+        rootless_arena(|mc| {
+                let root_expr = crate::expr_parser::exprParser::new().parse(mc, lexer).unwrap();
+            eval(mc, root_expr, 100);
+        })
     }
 }
