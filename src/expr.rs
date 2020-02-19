@@ -77,11 +77,6 @@ pub enum Expr<'gc> {
         name: &'gc str,
         arity: usize,
     },
-    BinaryOp { // specialized primop, might not need, to be decided later
-        name: &'gc str,
-        left: GcExpr<'gc>,
-        right: GcExpr<'gc>,
-    },
     HasAttr { // specialized primop, might not need, to be decided later
         expr: GcExpr<'gc>,
         attr_path: Vec<GcExpr<'gc>>,

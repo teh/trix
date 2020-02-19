@@ -18,7 +18,7 @@ mod tests {
 
     #[test]
     fn parse_nested_lambda() {
-        let mut lexer = Lexer::new(
+        let lexer = Lexer::new(
             "let f = x: y: x || y; in f",
             Vec::with_capacity(10),
             0,
@@ -31,7 +31,7 @@ mod tests {
 
     #[test]
     fn parse_autoargs() {
-        let mut lexer = Lexer::new(
+        let lexer = Lexer::new(
             "let x = 1; in { a ? 1, b ? 2}: a + b",
             Vec::with_capacity(10),
             0,
@@ -44,7 +44,7 @@ mod tests {
 
     #[test]
     fn parse_lambda_head() {
-        let mut lexer = Lexer::new(
+        let lexer = Lexer::new(
             "f {}",
             Vec::with_capacity(10),
             0,
@@ -57,7 +57,7 @@ mod tests {
 
     #[test]
     fn parse_inherit() {
-        let mut lexer = Lexer::new(
+        let lexer = Lexer::new(
             "{ inherit pkgs; }",
             Vec::with_capacity(10),
             0,
@@ -79,7 +79,7 @@ mod tests {
                 Ok(path) => {
                     println!("{:?}", path);
                     let s = std::fs::read_to_string(path).expect("could not read file");
-                    let mut lexer = Lexer::new(&s, Vec::with_capacity(10), 0);
+                    let lexer = Lexer::new(&s, Vec::with_capacity(10), 0);
                     rootless_arena(|mc| match crate::expr_parser::exprParser::new().parse(mc, lexer) {
                         Ok(i) => println!("{:?}", i),
                         Err(err) => panic!("invalid parse: {:?}", err),

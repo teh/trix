@@ -6,6 +6,8 @@ use crate::expr::{Expr, GcExpr, Symbol};
 use gc_arena::{Gc, MutationContext};
 use crate::lexer;
 use crate::lexer::nix_lexer::{Token};
+use crate::parser_prelude::*;
+
 
 grammar<'gc, 'cx>(mc: MutationContext<'gc, 'cx>);
 
@@ -115,27 +117,17 @@ pub expr_op_p4: GcExpr<'gc> = {
     expr_op_p3
 }
 pub expr_op_p5: GcExpr<'gc> = {
-    <left:expr_op_p5> "++" <right:expr_op_p4> =>
-        { Gc::allocate(mc, Expr::BinaryOp { name: "++",  left, right }) },
+    <left:expr_op_p5> "++" <right:expr_op_p4> => binop(mc, "++", left, right),
     expr_op_p4
 }
 pub expr_op_p6: GcExpr<'gc> = {
-    <left:expr_op_p6> "*" <right:expr_op_p5> => {
-        Gc::allocate(mc, Expr::App {
-            arity: 2,
-            f: Gc::allocate(mc, Expr::PrimOp { name: "*",  arity: 2 }),
-            args: vec![left, right],
-        })
-    },
-    <left:expr_op_p6> "/" <right:expr_op_p5> =>
-        { Gc::allocate(mc, Expr::BinaryOp { name: "/",  left, right }) },
+    <left:expr_op_p6> "*" <right:expr_op_p5> => binop(mc, "*", left, right),
+    <left:expr_op_p6> "/" <right:expr_op_p5> => binop(mc, "/", left, right),
     expr_op_p5
 }
 pub expr_op_p7: GcExpr<'gc> = {
-    <left:expr_op_p7> "+" <right:expr_op_p6> =>
-        { Gc::allocate(mc, Expr::BinaryOp { name: "+",  left, right }) },
-    <left:expr_op_p7> "-" <right:expr_op_p6> =>
-        { Gc::allocate(mc, Expr::BinaryOp { name: "-",  left, right }) },
+    <left:expr_op_p7> "+" <right:expr_op_p6> => binop(mc, "+", left, right),
+    <left:expr_op_p7> "-" <right:expr_op_p6> => binop(mc, "-", left, right),
     expr_op_p6
 }
 pub expr_op_p8: GcExpr<'gc> = {
@@ -144,41 +136,31 @@ pub expr_op_p8: GcExpr<'gc> = {
     expr_op_p7
 }
 pub expr_op_p9: GcExpr<'gc> = {
-    <left:expr_op_p9> "//" <right:expr_op_p8> =>
-        { Gc::allocate(mc, Expr::BinaryOp { name: "//",  left, right }) },
+    <left:expr_op_p9> "//" <right:expr_op_p8> => binop(mc, "//", left, right),
     expr_op_p8
 }
 pub expr_op_p10: GcExpr<'gc> = {
-    <left:expr_op_p10> "<" <right:expr_op_p9> =>
-        { Gc::allocate(mc, Expr::BinaryOp { name: "<",  left, right }) },
-    <left:expr_op_p10> "<=" <right:expr_op_p9> =>
-        { Gc::allocate(mc, Expr::BinaryOp { name: "<=",  left, right }) },
-    <left:expr_op_p10> ">" <right:expr_op_p9> =>
-        { Gc::allocate(mc, Expr::BinaryOp { name: ">",  left, right }) },
-    <left:expr_op_p10> ">=" <right:expr_op_p9> =>
-        { Gc::allocate(mc, Expr::BinaryOp { name: ">=",  left, right }) },
+    <left:expr_op_p10> "<" <right:expr_op_p9> => binop(mc, "<", left, right),
+    <left:expr_op_p10> "<=" <right:expr_op_p9> => binop(mc, "<=", left, right),
+    <left:expr_op_p10> ">" <right:expr_op_p9> => binop(mc, ">", left, right),
+    <left:expr_op_p10> ">=" <right:expr_op_p9> => binop(mc, ">=", left, right),
     expr_op_p9,
 }
 pub expr_op_p11: GcExpr<'gc> = {
-    <left:expr_op_p11> "==" <right:expr_op_p10> =>
-        { Gc::allocate(mc, Expr::BinaryOp { name: "==",  left, right }) },
-    <left:expr_op_p11> "!=" <right:expr_op_p10> =>
-        { Gc::allocate(mc, Expr::BinaryOp { name: "!=",  left, right }) },
+    <left:expr_op_p11> "==" <right:expr_op_p10> => binop(mc, "==", left, right),
+    <left:expr_op_p11> "!=" <right:expr_op_p10> => binop(mc, "!=", left, right),
     expr_op_p10,
 }
 pub expr_op_p12: GcExpr<'gc> = {
-    <left:expr_op_p12> "&&" <right:expr_op_p11> =>
-        { Gc::allocate(mc, Expr::BinaryOp { name: "&&",  left, right }) },
+    <left:expr_op_p12> "&&" <right:expr_op_p11> => binop(mc, "&&", left, right),
     expr_op_p11,
 }
 pub expr_op_p13: GcExpr<'gc> = {
-    <left:expr_op_p13> "||" <right:expr_op_p12> =>
-        { Gc::allocate(mc, Expr::BinaryOp { name: "||",  left, right }) },
+    <left:expr_op_p13> "||" <right:expr_op_p12> => binop(mc, "||", left, right),
     expr_op_p12,
 }
 pub expr_op_p14: GcExpr<'gc> = {
-    <left:expr_op_p14> "->" <right:expr_op_p13> =>
-        { Gc::allocate(mc, Expr::BinaryOp { name: "->",  left, right }) },
+    <left:expr_op_p14> "->" <right:expr_op_p13> => binop(mc, "->", left, right),
     expr_op_p13,
 }
 // -----------------------------------------------------------------------

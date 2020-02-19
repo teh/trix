@@ -309,7 +309,7 @@ mod tests {
     }
     #[test]
     fn check_simple_eval() {
-        let lexer = Lexer::new("2 * (3 * 4)", Vec::with_capacity(10), 0);
+        let lexer = Lexer::new("2 * 3 + 4", Vec::with_capacity(10), 0);
         rootless_arena(|mc| {
             let root_expr = crate::expr_parser::exprParser::new().parse(mc, lexer).unwrap();
             let e = eval(mc, root_expr, 12);
